@@ -93,6 +93,51 @@
   }
   function initial(name) { return String(name || '?').trim().charAt(0) || '?'; }
 
+
+  /* ---------------- 在线 API 层 ---------------- */
+  var API_BASE = '';
+  var TOKEN_KEY = 'c74_token', ME_KEY = 'c74_me';
+
+  function token() { try { return localStorage.getItem(TOKEN_KEY) || ''; } catch (e) { return ''; } }
+  function me() { try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null'); } catch (e) { return null; } }
+  function setAuth(t, u) {
+    try { localStorage.setItem(TOKEN_KEY, t); localStorage.setItem(ME_KEY, JSON.stringify(u || null)); } catch (e) {}
+  }
+  function clearAuth() {
+    try { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(ME_KEY); } catch (e) {}
+  }
+
+  function api(path, opts) {
+    opts = opts || {};
+    var headers = { 'Content-Type': 'application/json' };
+    var t = token();
+    if (t) headers.Authorization = 'Bearer ' + t;
+    return fetch(API_BASE + path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body ? JSON.stringify(opts.body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) {
+          var err = new Error(d.error || ('HTTP ' + r.status));
+          err.status = r.status;
+          throw err;
+        }
+        return d;
+      });
+    });
+  }
+
+  var _boot = null;
+  function boot() {
+    if (!_boot) {
+      _boot = api('/api/bootstrap').catch(function (e) { _boot = null; throw e; });
+    }
+    return _boot;
+  }
+  function refreshBoot() { _boot = null; return boot(); }
+
+
   window.C74 = {
     KEY: KEY,
     seed: seed,
@@ -101,6 +146,14 @@
     uid: uid,
     stamp: stamp,
     esc: esc,
-    initial: initial
+    initial: initial,
+    api: api,
+    boot: boot,
+    refreshBoot: refreshBoot,
+    token: token,
+    me: me,
+    setAuth: setAuth,
+    clearAuth: clearAuth,
+    online: function () { return !!token(); }
   };
 })();

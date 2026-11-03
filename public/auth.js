@@ -14,8 +14,21 @@
     'M4D1-77AB-C0DE': { use: '班级成员 · 管理员', batch: '2026 秋季 · A 批', tags: ['管理员', '一次性', '可发码'] }
   };
 
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {})
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+      });
+    });
+  }
+
   var API = {
-    /* 校验注册码 → { ok, data?, error? } */
+    /* 注册码：本地格式校验，真正是否可用由 /api/register 判定 */
     verifyCode: function (code) {
       return new Promise(function (resolve) {
         setTimeout(function () {
@@ -24,49 +37,47 @@
             var d = MOCK_CODES[norm];
             resolve({ ok: true, data: { use: d.use, batch: d.batch, tags: d.tags } });
           } else if (/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(norm)) {
-            /* 演示模式：格式正确即视为合法码 */
-            resolve({ ok: true, data: { use: '班级成员 · 普通成员', batch: '2026 秋季 · 通用', tags: ['演示码', '一次性', '绑定学号'] } });
+            resolve({ ok: true, data: { use: '班级成员 · 普通成员', batch: '2026 秋季 · 通用', tags: ['通用码', '绑定学号'] } });
           } else {
-            resolve({ ok: false, error: '注册码无效或已被使用' });
+            resolve({ ok: false, error: '注册码格式不对（XXXX-XXXX-XXXX）' });
           }
-        }, 520);
+        }, 380);
       });
     },
-    /* 注册 → { ok, data } */
+
+    /* 注册 → 服务器建账号 */
     register: function (payload) {
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          var users = loadUsers();
-          if (users.some(function (u) { return u.id === payload.id; })) {
-            return resolve({ ok: false, error: '这个学号已经注册过了，直接登录吧' });
-          }
-          users.push({ id: payload.id, name: payload.name, pwd: payload.pwd, role: 'member', at: Date.now() });
-          saveUsers(users);
-          resolve({ ok: true, data: { name: payload.name, id: payload.id } });
-        }, 700);
+      return post('/api/register', {
+        code: payload.code, user: payload.id, name: payload.name, pass: payload.pwd
+      }).then(function (d) {
+        return { ok: true, data: d.user };
+      }).catch(function (e) {
+        return { ok: false, error: e.message || '注册失败' };
       });
     },
-    /* 登录 → { ok, data?, error? } */
+
+    /* 登录 → 服务器校验，拿 token */
     login: function (id, pwd) {
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          var users = loadUsers();
-          var u = users.filter(function (x) {
-            return x.id.toLowerCase() === id.toLowerCase() || (x.name || '').toLowerCase() === id.toLowerCase();
-          })[0];
-          if (!u) {
-            /* 演示模式：没有注册记录也放行 */
-            u = { id: id, name: id, role: 'member' };
-          } else if (u.pwd !== pwd) {
-            return resolve({ ok: false, error: '密码不对，再想想是哪个' });
-          }
+      return post('/api/login', { user: id, pass: pwd }).then(function (d) {
+        var u = d.user;
+        if (window.C74 && C74.setAuth) {
+          C74.setAuth(d.token, u);
+        } else {
           try {
-            sessionStorage.setItem('c74_session', JSON.stringify({
-              id: u.id, name: u.name, role: u.role, at: Date.now()
-            }));
+            localStorage.setItem('c74_token', d.token);
+            localStorage.setItem('c74_me', JSON.stringify(u));
           } catch (e) {}
-          resolve({ ok: true, data: u });
-        }, 760);
+        }
+        try {
+          sessionStorage.setItem('c74_session', JSON.stringify({
+            id: u.id, name: u.name, role: u.level, level: u.level, at: Date.now()
+          }));
+        } catch (e) {}
+        return { ok: true, data: u };
+      }).catch(function (e) {
+        var m = e.message || '登录失败';
+        if (m === 'Failed to fetch' || m.indexOf('fetch') > -1) m = '连不上服务器，检查网络后重试';
+        return { ok: false, error: m };
       });
     }
   };

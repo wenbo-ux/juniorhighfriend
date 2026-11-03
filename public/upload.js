@@ -329,15 +329,31 @@
   /* ---------------- 发布 ---------------- */
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
+  function afterInsert(post, msg) {
+    var card = insertCard(post);
+    close();
+    toast(msg);
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function publishLocal(post) {
+    if (!data) { toast('数据没准备好，刷新一下'); return; }
+    data.posts.unshift(post);
+    var size = 0;
+    try { size = JSON.stringify(data).length; } catch (e) {}
+    if (size > 4e6) { data.posts.shift(); toast('本地空间满了，删几条老动态再发'); return; }
+    C74.save(data);
+    afterInsert(post, post.type === 'photo' ? '照片已发到班级空间' : '已发布');
+  }
+
   $('#upSend').addEventListener('click', function () {
     var ta = $('#upTa');
     var txt = (ta ? ta.value : '').trim();
     if (!txt) { toast(state.mode === 'photo' ? '照片必须配一句文案' : '写点内容再发'); return; }
     if (state.mode === 'photo' && !state.images.length) { toast('先选一张照片'); return; }
-    if (!data) { toast('数据没准备好，刷新一下'); return; }
 
     var d = new Date();
-    var post = {
+    var local = {
       id: 'u' + d.getTime().toString(36) + Math.random().toString(36).slice(2, 5),
       who: ME,
       text: txt,
@@ -345,28 +361,31 @@
       images: state.mode === 'photo' ? state.images.slice() : [],
       date: d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate()),
       at: pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()),
-      no: 'IMG ' + ('00' + (data.posts.length + 1)).slice(-3),
-      pinned: false,
-      hidden: false,
-      mine: true,
-      comments: []
+      no: 'IMG ' + ('00' + ((data ? data.posts.length : 0) + 1)).slice(-3),
+      pinned: false, hidden: false, mine: true, comments: []
     };
 
-    data.posts.unshift(post);
-
-    var size = 0;
-    try { size = JSON.stringify(data).length; } catch (e) {}
-    if (size > 4e6) {
-      data.posts.shift();
-      toast('本地空间满了，删几条老动态再发');
+    if (!window.C74 || !C74.online || !C74.online()) {
+      publishLocal(local);
       return;
     }
-    C74.save(data);
 
-    var card = insertCard(post);
-    close();
-    toast(state.mode === 'photo' ? '照片已发到班级空间' : '已发布');
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    var btn = $('#upSend');
+    btn.disabled = true; btn.textContent = '发 送 中';
+    C74.api('/api/posts', {
+      method: 'POST',
+      body: { text: txt, type: state.mode, images: local.images }
+    }).then(function (res) {
+      btn.disabled = false; btn.textContent = '发 布';
+      var p = res.post;
+      p.mine = true;
+      p.no = local.no;
+      if (data) { data.posts.unshift(p); C74.save(data); }
+      afterInsert(p, p.type === 'photo' ? '照片已发到班级空间' : '已发布');
+    }).catch(function (err) {
+      btn.disabled = false; btn.textContent = '发 布';
+      toast('发送失败：' + (err.message || '网络异常'));
+    });
   });
 
   /* 删自己的动态 */
@@ -374,15 +393,16 @@
     var b = e.target.closest && e.target.closest('[data-udel]');
     if (!b) return;
     var id = b.getAttribute('data-udel');
-    if (!data) return;
-    var idx = -1;
-    data.posts.forEach(function (p, i) { if (p.id === id) idx = i; });
-    if (idx < 0) return;
-    data.posts[idx].hidden = true;
-    C74.save(data);
+    if (data) {
+      data.posts.forEach(function (p) { if (p.id === id) p.hidden = true; });
+      C74.save(data);
+    }
     var card = b.closest('.card');
     if (card) card.remove();
     toast('已删除');
+    if (window.C74 && C74.online && C74.online()) {
+      C74.api('/api/posts/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
+    }
   });
 
   /* ---------------- 入口 ---------------- */
@@ -410,4 +430,33 @@
       c.hidden = false;
     });
   }
+
+  /* ---------------- 从服务器同步（在线模式） ---------------- */
+  function syncServer() {
+    if (!window.C74 || !C74.online || !C74.online()) return;
+    C74.boot().then(function (d) {
+      /* 公告：交给 manage.js 渲染，这样管理按钮还在 */
+      if (window.C74Notices && Array.isArray(d.notices)) {
+        window.C74Notices.set(d.notices.map(function (n) {
+          return {
+            id: n.id, text: n.text, author: n.author,
+            urgent: !!n.urgent, pinned: !!n.pinned,
+            images: n.images || [], at: (n.at || '').slice(0, 16)
+          };
+        }));
+      }
+      /* 动态：把服务器上有、本地没渲染过的补上 */
+      var have = {};
+      document.querySelectorAll('.card[data-post]').forEach(function (c) {
+        have[c.getAttribute('data-post')] = 1;
+      });
+      var meNow = (C74.me && C74.me()) || null;
+      (d.posts || []).slice().reverse().forEach(function (p) {
+        if (have[p.id]) return;
+        p.mine = !!(meNow && meNow.id === p.who_id);
+        insertCard(p);
+      });
+    }).catch(function () {});
+  }
+  syncServer();
 })();

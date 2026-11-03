@@ -130,6 +130,12 @@
   /* ---------------- 公告 ---------------- */
   /* 发布一条公告（置顶会挤掉旧的置顶） */
   function publishNotice(o) {
+    if (window.C74 && C74.online && C74.online() && C74.api) {
+      C74.api('/api/notices', {
+        method: 'POST',
+        body: { text: o.text, urgent: !!o.urgent, pinned: true, images: o.images || [] }
+      }).catch(function () {});
+    }
     data.notices.forEach(function (x) { x.pinned = false; });
     data.notices.unshift({
       id: C74.uid('n_'), text: o.text, author: o.author,
@@ -168,6 +174,15 @@
         '</article>';
     }).join('');
   }
+
+  /* 供在线同步层写入服务器公告 */
+  window.C74Notices = {
+    set: function (list) {
+      if (!Array.isArray(list)) return;
+      data.notices = list.slice();
+      renderNotices();
+    }
+  };
 
   $('#noticeFeed') && $('#noticeFeed').addEventListener('click', function (e) {
     var b = e.target.closest('[data-nact]');
@@ -386,8 +401,26 @@
         urgent: $('#mcUrgent').getAttribute('aria-pressed') === 'true',
         pinned: pinned, at: C74.stamp()
       });
-      save(); log('发布公告：' + text.slice(0, 16));
-      renderNotices(); closeSheet(); toast('公告已发布');
+      var payload = {
+        text: text, urgent: $('#mcUrgent').getAttribute('aria-pressed') === 'true', pinned: pinned
+      };
+      if (window.C74 && C74.online && C74.online()) {
+        C74.api('/api/notices', { method: 'POST', body: payload }).then(function (res) {
+          var n = res.notice || {};
+          data.notices.unshift({
+            id: n.id || C74.uid('n_'), text: text, author: session.name || '管理员',
+            urgent: !!payload.urgent, pinned: pinned, images: [], at: C74.stamp()
+          });
+          log('发布公告：' + text.slice(0, 16));
+          renderNotices(); closeSheet(); toast('公告已发布');
+          if (C74.refreshBoot) C74.refreshBoot();
+        }).catch(function (err) {
+          toast('发布失败：' + (err.message || '网络异常'));
+        });
+      } else {
+        save(); log('发布公告：' + text.slice(0, 16));
+        renderNotices(); closeSheet(); toast('公告已发布');
+      }
     });
   }
 
