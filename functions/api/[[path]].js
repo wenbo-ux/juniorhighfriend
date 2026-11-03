@@ -35,6 +35,12 @@ async function handle(req, env) {
       if (path === '/api/logout' && req.method === 'POST') return await logout(req, env, cors);
       if (path === '/api/me') return await me(req, env, cors);
       if (path === '/api/members') return await members(req, env, cors);
+      if (path === '/api/bootstrap') return await bootstrap(req, env, cors);
+      if (path === '/api/posts' && req.method === 'GET') return await listPosts(req, env, cors);
+      if (path === '/api/posts' && req.method === 'POST') return await createPost(req, env, cors);
+      if (path === '/api/notices' && req.method === 'GET') return await listNotices(req, env, cors);
+      if (path === '/api/notices' && req.method === 'POST') return await createNotice(req, env, cors);
+      if (path === '/api/register' && req.method === 'POST') return await register(req, env, cors);
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
@@ -285,6 +291,118 @@ async function reviewReport(req, env, cors, id) {
       (action === 'ok' ? '举报成立：' : '举报驳回：') + (r.target_name || r.target_id)).run();
 
   return json({ ok: true }, 200, cors);
+}
+
+/* ---------------- 动态 / 公告 ---------------- */
+function parseImages(v) {
+  if (!v) return [];
+  try { var a = JSON.parse(v); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+}
+
+async function listPosts(req, env, cors) {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all();
+  const posts = (results || []).map(p => Object.assign({}, p, { images: parseImages(p.images) }));
+  return json({ ok: true, posts }, 200, cors);
+}
+
+async function listNotices(req, env, cors) {
+  const { results } = await env.DB.prepare(
+    'SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all();
+  const notices = (results || []).map(n => Object.assign({}, n, { images: parseImages(n.images) }));
+  return json({ ok: true, notices }, 200, cors);
+}
+
+async function bootstrap(req, env, cors) {
+  const u = await auth(req, env);
+  const [p, n, m] = await Promise.all([
+    env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
+    env.DB.prepare('SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all(),
+    env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all()
+  ]);
+  return json({
+    ok: true,
+    user: u ? { id: u.id, user: u.user, name: u.name, level: u.level } : null,
+    posts: (p.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
+    notices: (n.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
+    members: m.results || []
+  }, 200, cors);
+}
+
+async function createPost(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const text = String(b.text || '').trim();
+  const type = b.type === 'photo' ? 'photo' : 'text';
+  let images = Array.isArray(b.images) ? b.images.slice(0, 3) : [];
+  images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+  if (!text) return json({ error: '内容不能为空' }, 400, cors);
+  if (text.length > 500) return json({ error: '太长了' }, 400, cors);
+  if (type === 'photo' && !images.length) return json({ error: '照片必须配文案和图片' }, 400, cors);
+  if (images.join('').length > 1800000) return json({ error: '图片太大，请少放或换小图' }, 413, cors);
+
+  const d = new Date();
+  const pad = n => (n < 10 ? '0' + n : '' + n);
+  const id = 'u' + d.getTime().toString(36) + Math.random().toString(36).slice(2, 5);
+  const date = d.getFullYear() + '.' + pad(d.getMonth() + 1) + '.' + pad(d.getDate());
+  const at = pad(d.getMonth() + 1) + '.' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+
+  await env.DB.prepare(
+    `INSERT INTO posts (id,who,who_id,type,text,images,date,at,pinned,hidden,created_at)
+     VALUES (?,?,?,?,?,?,?,?,0,0,?)`
+  ).bind(id, u.name || u.user, u.id, type, text, JSON.stringify(images), date, at, new Date().toISOString()).run();
+
+  const post = { id, who: u.name || u.user, who_id: u.id, type, text, images, date, at, pinned: 0, hidden: 0,
+                 created_at: new Date().toISOString() };
+  return json({ ok: true, post }, 200, cors);
+}
+
+async function createNotice(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '中级及以上才能发公告' }, 403, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const text = String(b.text || '').trim();
+  if (text.length < 2) return json({ error: '至少写两个字' }, 400, cors);
+  let images = Array.isArray(b.images) ? b.images.slice(0, 3) : [];
+  images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+  if (images.join('').length > 1800000) return json({ error: '图片太大' }, 413, cors);
+
+  const pinned = b.pinned !== false;
+  if (pinned) await env.DB.prepare('UPDATE notices SET pinned = 0').run();
+
+  const id = 'n_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const iso = new Date().toISOString();
+  await env.DB.prepare(
+    `INSERT INTO notices (id,text,author,author_id,urgent,pinned,images,at,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).bind(id, text, u.name || u.user, u.id, b.urgent ? 1 : 0, pinned ? 1 : 0,
+    JSON.stringify(images), iso.slice(0, 16).replace('T', ' '), iso).run();
+
+  return json({ ok: true, notice: { id, text, author: u.name || u.user, urgent: b.urgent ? 1 : 0,
+    pinned: pinned ? 1 : 0, images } }, 200, cors);
+}
+
+async function register(req, env, cors) {
+  const b = await req.json().catch(() => ({}));
+  const user = String(b.user || '').trim();
+  const pass = String(b.pass || '');
+  const code = String(b.code || '').trim().toUpperCase();
+  const join = (env.JOIN_CODE || '7C4A-9F2E-B615').toUpperCase();
+  if (!user || pass.length < 6) return json({ error: '昵称或密码不合规' }, 400, cors);
+  if (code !== join) return json({ error: '注册码不对' }, 403, cors);
+
+  const exist = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(user).first();
+  if (exist) return json({ error: '这个昵称已被使用' }, 409, cors);
+
+  const hash = await makePass(pass);
+  const id = uid('a_');
+  await env.DB.prepare('INSERT INTO accounts (id,user,name,level,pass,created_at) VALUES (?,?,?,?,?,?)')
+    .bind(id, user, user, 'member', hash, new Date().toISOString()).run();
+  return json({ ok: true, user: { id, user, name: user, level: 'member' } }, 200, cors);
 }
 
 /* ---------------- 日志 ---------------- */
