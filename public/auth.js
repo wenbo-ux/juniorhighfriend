@@ -391,7 +391,7 @@
     var pwd = $('#loginPwd').value || '';
     var msg = $('#loginMsg');
     if (id.length < 2) { showMsg(msg, '请输入学号或昵称'); $('#loginId').focus(); return; }
-    if (pwd.length < 6) { showMsg(msg, '密码至少 6 位'); $('#loginPwd').focus(); return; }
+    if (pwd.length < 4) { showMsg(msg, '密码至少 4 位'); $('#loginPwd').focus(); return; }
     showMsg(msg, '');
     var btn = $('#loginBtn'), tx = btn.querySelector('.tx');
     btn.disabled = true; btn.classList.add('loading');
