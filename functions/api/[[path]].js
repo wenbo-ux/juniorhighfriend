@@ -1,0 +1,297 @@
+/* =========================================================
+   七年四班 · API（Cloudflare Pages Functions + D1）
+   部署位置：functions/api/[[path]].js → 挂在 /api/*
+   路由：
+     GET  /api/ping
+     POST /api/setup          { accounts:[], members:[] }  （需 x-setup-token）
+     POST /api/login          { user, pass }
+     POST /api/logout
+     GET  /api/me
+     GET  /api/members
+     GET  /api/reports        按角色返回可见举报
+     POST /api/reports        { target_type, target_id, target_name, reason, images }
+     POST /api/reports/:id/review  { action:'ok'|'no', note, punish }
+     GET  /api/logs
+   绑定：D1 变量名必须是 DB
+   环境变量：SETUP_TOKEN（初始化用，配好后删掉）
+             ALLOWED_ORIGINS（可选，逗号分隔；不填 = *）
+   ========================================================= */
+const enc = new TextEncoder();
+const RANK = { member: 0, junior: 1, mid: 2, high: 3 };
+const ITER = 120000;
+
+async function handle(req, env) {
+    const url = new URL(req.url);
+    const path = url.pathname.replace(/\/+$/, '') || '/';
+    const cors = corsHeaders(req, env);
+
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+
+    try {
+      if (path === '/api/ping') return json({ ok: true, ts: Date.now() }, 200, cors);
+
+      if (path === '/api/setup' && req.method === 'POST') return await setup(req, env, cors);
+      if (path === '/api/login' && req.method === 'POST') return await login(req, env, cors);
+      if (path === '/api/logout' && req.method === 'POST') return await logout(req, env, cors);
+      if (path === '/api/me') return await me(req, env, cors);
+      if (path === '/api/members') return await members(req, env, cors);
+      if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
+      if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
+
+      const m = path.match(/^\/api\/reports\/([\w-]+)\/review$/);
+      if (m && req.method === 'POST') return await reviewReport(req, env, cors, m[1]);
+
+      if (path === '/api/logs') return await logs(req, env, cors);
+
+      return json({ error: 'not found' }, 404, cors);
+    } catch (e) {
+      return json({ error: 'server', detail: String(e && e.message || e) }, 500, cors);
+    }
+}
+
+/* Pages Functions 入口：/api/* 全部交给 handle */
+export const onRequest = (ctx) => handle(ctx.request, ctx.env);
+export const onRequestGet = onRequest;
+export const onRequestPost = onRequest;
+
+/* ---------------- 基础 ---------------- */
+function corsHeaders(req, env) {
+  const allow = (env.ALLOWED_ORIGINS || '*').trim();
+  let origin = '*';
+  if (allow !== '*') {
+    const list = allow.split(',').map(s => s.trim()).filter(Boolean);
+    const o = req.headers.get('Origin') || '';
+    origin = list.includes(o) ? o : list[0] || '*';
+  }
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type,Authorization,x-setup-token',
+    'Access-Control-Max-Age': '86400',
+    'Vary': 'Origin'
+  };
+}
+function json(data, status, cors) {
+  return new Response(JSON.stringify(data), {
+    status: status || 200,
+    headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8' }, cors)
+  });
+}
+function nowISO() { return new Date().toISOString(); }
+function uid(p) { return p + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function hex(buf) { return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join(''); }
+
+async function hashPass(pass, saltHex, iter) {
+  const salt = Uint8Array.from(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+  const key = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations: iter || ITER, hash: 'SHA-256' }, key, 256);
+  return hex(bits);
+}
+async function makePass(pass) {
+  const salt = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const h = await hashPass(pass, salt, ITER);
+  return `pbkdf2$${ITER}$${salt}$${h}`;
+}
+async function checkPass(pass, stored) {
+  const parts = String(stored || '').split('$');
+  if (parts.length !== 4) return false;
+  const iter = parseInt(parts[1], 10) || ITER;
+  const h = await hashPass(pass, parts[2], iter);
+  return h === parts[3];
+}
+
+async function auth(req, env) {
+  const h = req.headers.get('Authorization') || '';
+  const token = h.replace(/^Bearer\s+/i, '').trim();
+  if (!token) return null;
+  const row = await env.DB.prepare(
+    `SELECT s.token, s.expires_at, a.id, a.user, a.name, a.level
+       FROM sessions s JOIN accounts a ON a.id = s.account_id
+      WHERE s.token = ?`
+  ).bind(token).first();
+  if (!row) return null;
+  if (row.expires_at && row.expires_at < nowISO()) return null;
+  return row;
+}
+function need(user, minLevel) {
+  return user && (RANK[user.level] || 0) >= (RANK[minLevel] || 0);
+}
+
+/* ---------------- 初始化 ---------------- */
+async function setup(req, env, cors) {
+  if (!env.SETUP_TOKEN) return json({ error: 'SETUP_TOKEN 未设置' }, 400, cors);
+  if (req.headers.get('x-setup-token') !== env.SETUP_TOKEN) return json({ error: 'setup token 不对' }, 403, cors);
+
+  const body = await req.json().catch(() => ({}));
+  const accounts = Array.isArray(body.accounts) ? body.accounts : [];
+  const mems = Array.isArray(body.members) ? body.members : [];
+  let accN = 0, memN = 0;
+
+  for (const a of accounts) {
+    if (!a.user || !a.pass || !a.level) continue;
+    const hash = await makePass(String(a.pass));
+    const exist = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(a.user).first();
+    if (exist) {
+      await env.DB.prepare('UPDATE accounts SET name=?, level=?, pass=? WHERE id=?')
+        .bind(a.name || a.user, a.level, hash, exist.id).run();
+    } else {
+      await env.DB.prepare('INSERT INTO accounts (id,user,name,level,pass,created_at) VALUES (?,?,?,?,?,?)')
+        .bind(uid('a_'), a.user, a.name || a.user, a.level, hash, nowISO()).run();
+    }
+    accN++;
+  }
+
+  for (const m of mems) {
+    if (!m.id) continue;
+    await env.DB.prepare(
+      `INSERT INTO members (id,name,role,owner) VALUES (?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name, role=excluded.role, owner=excluded.owner`
+    ).bind(m.id, m.name || m.id, m.role || 'member', m.owner || null).run();
+    memN++;
+  }
+
+  return json({ ok: true, accounts: accN, members: memN }, 200, cors);
+}
+
+/* ---------------- 登录 ---------------- */
+async function login(req, env, cors) {
+  const body = await req.json().catch(() => ({}));
+  const user = String(body.user || '').trim();
+  const pass = String(body.pass || '');
+  if (!user || !pass) return json({ error: '账号密码都要填' }, 400, cors);
+
+  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
+  if (!acc || !(await checkPass(pass, acc.pass))) return json({ error: '账号或密码不对' }, 401, cors);
+
+  const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
+  const exp = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(); // 14 天
+  await env.DB.prepare('INSERT INTO sessions (token,account_id,created_at,expires_at) VALUES (?,?,?,?)')
+    .bind(token, acc.id, nowISO(), exp).run();
+  await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowISO()).run();
+
+  return json({
+    ok: true, token, expires_at: exp,
+    user: { id: acc.id, user: acc.user, name: acc.name, level: acc.level }
+  }, 200, cors);
+}
+
+async function logout(req, env, cors) {
+  const h = req.headers.get('Authorization') || '';
+  const token = h.replace(/^Bearer\s+/i, '').trim();
+  if (token) await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
+  return json({ ok: true }, 200, cors);
+}
+
+async function me(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  return json({ ok: true, user: { id: u.id, user: u.user, name: u.name, level: u.level } }, 200, cors);
+}
+
+/* ---------------- 成员 ---------------- */
+async function members(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const { results } = await env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all();
+  return json({ ok: true, members: results || [] }, 200, cors);
+}
+
+/* ---------------- 举报 ---------------- */
+async function listReports(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const onlyMine = new URL(req.url).searchParams.get('mine') === '1';
+
+  let sql, binds;
+  if (u.level === 'high') {
+    sql = 'SELECT * FROM reports ORDER BY created_at DESC LIMIT 200';
+    binds = [];
+  } else if (onlyMine) {
+    sql = 'SELECT * FROM reports WHERE from_id = ? ORDER BY created_at DESC LIMIT 100';
+    binds = [u.id];
+  } else {
+    // 中管/普管：自己举报的 + 自己名下成员被举报的 + 自己处理过的
+    sql = `SELECT r.* FROM reports r
+             LEFT JOIN members m ON m.id = r.target_id AND r.target_type = 'member'
+            WHERE r.from_id = ? OR m.owner = ? OR r.handler_id = ?
+            ORDER BY r.created_at DESC LIMIT 100`;
+    binds = [u.id, u.id, u.id];
+  }
+
+  const { results } = await env.DB.prepare(sql).bind(...binds).all();
+  const list = (results || []).map(r => Object.assign({}, r, {
+    images: r.images ? JSON.parse(r.images) : []
+  }));
+  const pending = list.filter(r => r.status === 'pending').length;
+
+  return json({ ok: true, reports: list, pending }, 200, cors);
+}
+
+async function createReport(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+
+  const body = await req.json().catch(() => ({}));
+  const reason = String(body.reason || '').trim();
+  if (reason.length < 4) return json({ error: '理由至少 4 个字' }, 400, cors);
+
+  let images = Array.isArray(body.images) ? body.images.slice(0, 2) : [];
+  images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+  if (images.join('').length > 900000) return json({ error: '图片太大，换小一点或只放一张' }, 413, cors);
+
+  const id = uid('r_');
+  await env.DB.prepare(
+    `INSERT INTO reports (id,from_id,from_name,from_level,target_type,target_id,target_name,reason,images,status,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(id, u.id, u.name || u.user, u.level,
+    String(body.target_type || 'member'), String(body.target_id || ''), String(body.target_name || ''),
+    reason, JSON.stringify(images), 'pending', nowISO()).run();
+
+  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+    .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '提交举报：' + (body.target_name || body.target_id || '')).run();
+
+  return json({ ok: true, id }, 200, cors);
+}
+
+async function reviewReport(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'high')) return json({ error: '只有高管能审核举报' }, 403, cors);
+
+  const r = await env.DB.prepare('SELECT * FROM reports WHERE id = ?').bind(id).first();
+  if (!r) return json({ error: '举报不存在' }, 404, cors);
+
+  const body = await req.json().catch(() => ({}));
+  const action = body.action === 'ok' ? 'ok' : 'no';
+  const note = String(body.note || '').slice(0, 300);
+  const punish = String(body.punish || '').slice(0, 20);
+
+  await env.DB.prepare(
+    `UPDATE reports SET status=?, handler_id=?, handler_name=?, action=?, note=?, handled_at=? WHERE id=?`
+  ).bind(action, u.id, u.name || u.user, punish, note, nowISO(), id).run();
+
+  // 处罚落到成员表
+  if (action === 'ok' && r.target_type === 'member' && r.target_id && punish) {
+    if (punish === 'mute') {
+      await env.DB.prepare('UPDATE members SET muted = 1 WHERE id = ?').bind(r.target_id).run();
+    } else if (punish === 'ban') {
+      await env.DB.prepare('UPDATE members SET banned = 1 WHERE id = ?').bind(r.target_id).run();
+    }
+  }
+
+  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+    .bind(uid('l_'), nowISO(), u.name || u.user, u.level,
+      (action === 'ok' ? '举报成立：' : '举报驳回：') + (r.target_name || r.target_id)).run();
+
+  return json({ ok: true }, 200, cors);
+}
+
+/* ---------------- 日志 ---------------- */
+async function logs(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'junior')) return json({ error: '没有权限' }, 403, cors);
+  const { results } = await env.DB.prepare('SELECT * FROM logs ORDER BY at DESC LIMIT 100').all();
+  return json({ ok: true, logs: results || [] }, 200, cors);
+}

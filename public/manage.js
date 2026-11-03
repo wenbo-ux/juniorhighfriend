@@ -1,0 +1,698 @@
+/* =========================================================
+   七年四班 · 行内管理 manage.js
+   验证通过 → 回主站 → 按等级直接在界面上操作
+   等级：junior 普通管理 / mid 中级管理 / high 高级管理
+   ========================================================= */
+(function () {
+  'use strict';
+
+  var data = window.C74 ? C74.load() : null;
+  if (!data) return;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+
+  var session = {};
+  try { session = JSON.parse(sessionStorage.getItem('c74_session') || '{}'); } catch (e) {}
+  var adminSession = null;
+  try { adminSession = JSON.parse(sessionStorage.getItem('c74_admin_session') || 'null'); } catch (e) {}
+
+  function findMember() {
+    if (!session || (!session.id && !session.name)) return null;
+    return data.members.filter(function (m) {
+      return m.id === session.id || m.name === session.name;
+    })[0] || null;
+  }
+  var me = findMember();
+  var level = 'none';
+  if (adminSession && (adminSession.level === 'mid' || adminSession.level === 'high')) {
+    level = adminSession.level;
+  } else if (me && me.role === 'junior') {
+    level = 'junior';
+  }
+  var LV_NAME = { junior: '普通管理', mid: '中级管理', high: '高级管理' };
+  var LV_SHORT = { junior: '普管', mid: '中管', high: '高管' };
+  var rank = { none: 0, junior: 1, mid: 2, high: 3 };
+  function can(atLeast) { return rank[level] >= rank[atLeast]; }
+  function isBlocked() {
+    return !!(me && (me.muted || me.banned)) || !!(session && (session.muted || session.banned));
+  }
+
+  function save() { C74.save(data); }
+  function log(text) {
+    data.logs.unshift({ at: C74.stamp(), who: (session.name || session.id || '—'), level: level, text: text });
+    data.logs = data.logs.slice(0, 120);
+    save();
+  }
+  function initial(n) { return C74.initial(n); }
+  function esc(s) { return C74.esc(s); }
+
+  /* ---------------- toast ---------------- */
+  var mt = document.createElement('div');
+  mt.className = 'm-toast';
+  document.body.appendChild(mt);
+  var mtTimer = null;
+  function toast(msg) {
+    mt.textContent = msg;
+    mt.classList.add('on');
+    clearTimeout(mtTimer);
+    mtTimer = setTimeout(function () { mt.classList.remove('on'); }, 1900);
+  }
+
+  /* ---------------- 抽屉 ---------------- */
+  var mask = document.createElement('div');
+  mask.className = 'm-mask';
+  var sheet = document.createElement('div');
+  sheet.className = 'm-sheet';
+  sheet.innerHTML = '<div class="m-in"><div class="m-hd"><div><b id="mTitle">管理</b><small id="mSub"></small></div>' +
+    '<span class="sp"></span><button class="m-x" id="mClose" aria-label="关闭">' +
+    '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+    '<div class="m-body" id="mBody"></div></div>';
+  document.body.appendChild(mask);
+  document.body.appendChild(sheet);
+  var mTitle = $('#mTitle'), mSub = $('#mSub'), mBody = $('#mBody');
+
+  function openSheet(title, sub, html) {
+    mTitle.textContent = title;
+    mSub.textContent = sub || '';
+    mBody.innerHTML = html;
+    mask.classList.add('on');
+    sheet.classList.add('on');
+  }
+  function closeSheet() {
+    mask.classList.remove('on');
+    sheet.classList.remove('on');
+    mBody.innerHTML = '';
+  }
+  $('#mClose').addEventListener('click', closeSheet);
+  mask.addEventListener('click', closeSheet);
+
+  /* ---------------- 等级标识 ---------------- */
+  function mountChip() {
+    if (level === 'none') return;
+    var right = document.querySelector('.nav .nav-side:last-child');
+    if (!right || right.querySelector('.m-chip')) return;
+    var chip = document.createElement('button');
+    chip.className = 'm-chip' + (level === 'high' ? ' high' : level === 'junior' ? ' jr' : '');
+    chip.innerHTML = '<i></i>' + LV_SHORT[level];
+
+    /* 长按 = 打开管理菜单；短点不计菜单，10 秒内累计 11 次 → 高级密钥校验 */
+    var taps = 0, tapTimer = null, pressTimer = null, longFired = false;
+
+    chip.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    chip.addEventListener('pointerdown', function () {
+      longFired = false;
+      clearTimeout(pressTimer);
+      pressTimer = setTimeout(function () {
+        longFired = true;
+        openAdminMenu();
+        if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+      }, 520);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (ev) {
+      chip.addEventListener(ev, function () { clearTimeout(pressTimer); });
+    });
+
+    chip.addEventListener('click', function () {
+      if (longFired) { longFired = false; return; }
+      if (level !== 'mid') return;
+      taps++;
+      clearTimeout(tapTimer);
+      if (taps >= 11) {
+        taps = 0;
+        location.href = 'admin.html?gate=high';
+        return;
+      }
+      tapTimer = setTimeout(function () { taps = 0; }, 10000);
+    });
+    right.insertBefore(chip, right.firstChild);
+  }
+
+  /* ---------------- 公告 ---------------- */
+  /* 发布一条公告（置顶会挤掉旧的置顶） */
+  function publishNotice(o) {
+    data.notices.forEach(function (x) { x.pinned = false; });
+    data.notices.unshift({
+      id: C74.uid('n_'), text: o.text, author: o.author,
+      urgent: !!o.urgent, pinned: true, images: (o.images || []).slice(0, 3), at: C74.stamp()
+    });
+  }
+
+  function renderNotices() {
+    var feed = document.getElementById('noticeFeed');
+    if (!feed) return;
+    var list = data.notices.slice().sort(function (a, b) {
+      return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
+    }).slice(0, 3);
+    if (!list.length) { feed.innerHTML = ''; return; }
+    feed.innerHTML = list.map(function (n) {
+      var text = esc(n.text).replace(/\n/g, '<br>');
+      var acts = '';
+      if (level !== 'none') {
+        acts = '<div class="adm-bar">';
+        if (can('mid')) acts += '<button class="adm-act' + (n.pinned ? ' on' : '') + '" data-nact="pin" data-nid="' + n.id + '">' + (n.pinned ? '取消置顶' : '置顶') + '</button>';
+        acts += '<button class="adm-act danger" data-nact="del" data-nid="' + n.id + '">删除</button></div>';
+      }
+      return '<article class="card notice fade" data-nid="' + n.id + '">' +
+        '<div class="n-head"><span class="n-tag">' + (n.urgent ? '重要' : '公示') + '</span>' +
+        (n.pinned ? '<span class="n-pin">PINNED · ' + esc(n.author) + '</span>' : '') + '</div>' +
+        '<div class="n-body"><div class="n-who">' + esc(n.author) + '</div>' +
+        '<p class="n-text">' + text + '</p>' +
+        ((n.images && n.images.length)
+          ? '<div class="n-imgs' + (n.images.length > 1 ? ' multi' : '') + '">' +
+            n.images.slice(0, 3).map(function (u, i) {
+              return '<img src="' + u + '" alt="图片' + (i + 1) + '">';
+            }).join('') + '</div>'
+          : '') +
+        (n.urgent ? '<span class="n-warn">重 要 ！ ！ ！</span>' : '') + acts + '</div>' +
+        '<div class="n-foot"><span class="ok">已读 38 / 42</span><span>· ' + (n.pinned ? '置顶' : '公告') + '</span></div>' +
+        '</article>';
+    }).join('');
+  }
+
+  $('#noticeFeed') && $('#noticeFeed').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-nact]');
+    if (!b) return;
+    var n = data.notices.filter(function (x) { return x.id === b.dataset.nid; })[0];
+    if (!n) return;
+    if (b.dataset.nact === 'pin') {
+      if (!can('mid')) { toast('普通管理不能置顶'); return; }
+      n.pinned = !n.pinned;
+      if (n.pinned) data.notices.forEach(function (o) { if (o !== n) o.pinned = false; });
+      log((n.pinned ? '置顶公告：' : '取消置顶：') + n.text.slice(0, 14));
+      save(); renderNotices();
+      toast(n.pinned ? '已置顶' : '已取消置顶');
+    } else {
+      if (level === 'none') return;
+      data.notices = data.notices.filter(function (x) { return x !== n; });
+      log('删除公告：' + n.text.slice(0, 14));
+      save(); renderNotices();
+      toast('公告已删除');
+    }
+  });
+
+  /* ---------------- 动态上的管理按钮 ---------------- */
+  function postBar(card, p) {
+    var bar = card.querySelector('.bar');
+    if (!bar || bar.querySelector('.adm-bar') || level === 'none') return;
+    var box = document.createElement('div');
+    box.className = 'adm-bar';
+    if (can('mid')) {
+      var pin = document.createElement('button');
+      pin.className = 'adm-act' + (p.pinned ? ' on' : '');
+      pin.dataset.pact = 'pin';
+      pin.textContent = p.pinned ? '取消置顶' : '置顶';
+      box.appendChild(pin);
+    }
+    var del = document.createElement('button');
+    del.className = 'adm-act danger';
+    del.dataset.pact = 'del';
+    del.textContent = '删除';
+    box.appendChild(del);
+    bar.appendChild(box);
+  }
+
+  function pinFlag(card, on) {
+    var f = card.querySelector('.pin-flag');
+    if (on && !f) {
+      var s = document.createElement('span');
+      s.className = 'pin-flag';
+      s.textContent = '置顶';
+      card.appendChild(s);
+    } else if (!on && f) {
+      f.remove();
+    }
+    card.classList.toggle('pinned', !!on);
+  }
+
+  function decoratePosts() {
+    $$('.card[data-post]').forEach(function (card) {
+      var id = card.getAttribute('data-post');
+      var p = data.posts.filter(function (x) { return x.id === id; })[0];
+      if (!p) return;
+      if (p.hidden) { card.hidden = true; return; }
+      card.hidden = false;
+      pinFlag(card, p.pinned);
+      postBar(card, p);
+    });
+  }
+
+  document.querySelector('.feed') && document.querySelector('.feed').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-pact]');
+    if (!b) return;
+    var card = b.closest('[data-post]');
+    if (!card) return;
+    var p = data.posts.filter(function (x) { return x.id === card.getAttribute('data-post'); })[0];
+    if (!p) return;
+    if (b.dataset.pact === 'pin') {
+      if (!can('mid')) { toast('普通管理不能置顶'); return; }
+      p.pinned = !p.pinned;
+      if (p.pinned) data.posts.forEach(function (o) { if (o !== p) o.pinned = false; });
+      log((p.pinned ? '置顶动态：' : '取消置顶：') + p.who);
+      save(); decoratePosts();
+      toast(p.pinned ? '已置顶到首页' : '已取消置顶');
+    } else {
+      p.hidden = true; p.pinned = false;
+      log('删除动态：' + p.who + ' · ' + p.text.slice(0, 12));
+      save(); decoratePosts();
+      toast('消息已删除');
+    }
+  });
+
+  /* ---------------- 成员 ---------------- */
+  function roleLabel(m) {
+    if (m.role === 'junior') return { t: '普管', c: 'jr' };
+    if (m.role === 'mid') return { t: '中管', c: 'hi' };
+    if (m.role === 'high') return { t: '高管', c: 'hi' };
+    if (m.role === 'teacher') return { t: '老师', c: '' };
+    return { t: '成员', c: '' };
+  }
+
+  function openMembers() {
+    var html = data.members.map(function (m) {
+      var r = roleLabel(m);
+      return '<button class="m-row" data-mid="' + esc(m.id) + '">' +
+        '<span class="av ' + r.c + '">' + esc(initial(m.name)) + '</span>' +
+        '<span class="mi"><b>' + esc(m.name) + '</b><span>' + esc(m.id) + '</span></span>' +
+        '<span class="m-tag ' + r.c + '">' + r.t + '</span>' +
+        (m.muted ? '<span class="m-tag mute">禁言</span>' : '') +
+        (m.banned ? '<span class="m-tag mute">封禁</span>' : '') +
+        '</button>';
+    }).join('') || '<div class="m-empty">暂无成员</div>';
+
+    openSheet('成员名单', data.members.length + ' 人 · 点击查看', html);
+  }
+
+  $('#mBody') && $('#mBody').addEventListener('click', function (e) {
+    var row = e.target.closest('[data-mid]');
+    if (row) openMember(row.dataset.mid);
+  });
+
+  function openMember(id) {
+    var m = data.members.filter(function (x) { return x.id === id; })[0];
+    if (!m) return;
+    var r = roleLabel(m);
+    var html = '<div class="m-row" style="border:0;padding-top:0">' +
+      '<span class="av ' + r.c + '">' + esc(initial(m.name)) + '</span>' +
+      '<span class="mi"><b>' + esc(m.name) + '</b><span>' + esc(m.id) + ' · ' + r.t +
+      (m.muted ? ' · 已禁言' : '') + (m.banned ? ' · 已封禁' : '') + '</span></span></div>';
+
+    if (can('mid')) {
+      html += '<div class="m-field"><label>昵称 <span>NAME</span></label>' +
+        '<div class="inp"><input id="mmName" maxlength="12" value="' + esc(m.name) + '"></div></div>' +
+        '<div class="m-field"><label>学号 <span>ID</span></label>' +
+        '<div class="inp"><input id="mmId" maxlength="12" value="' + esc(m.id) + '"></div></div>' +
+        '<div class="m-act-row"><button class="m-btn solid" data-mact="save">保存修改</button></div>';
+    } else if (level === 'junior') {
+      html += '<p class="m-note">普通管理可以删除成员、禁言，但不能修改成员资料。</p>';
+    }
+
+    if (level !== 'none') {
+      html += '<div class="m-sec"><div class="m-sec-h">操作</div><div class="m-act-row">' +
+        '<button class="m-btn" data-mact="mute">' + (m.muted ? '解除禁言' : '禁言') + '</button>' +
+        (can('mid') ? '<button class="m-btn" data-mact="junior">' + (m.role === 'junior' ? '撤销普通管理' : '设为普通管理') + '</button>' : '') +
+        (level === 'high' ? '<button class="m-btn danger" data-mact="ban">' + (m.banned ? '解除封禁' : '封禁成员') + '</button>' : '') +
+        '<button class="m-btn danger" data-mact="del">删除成员</button>' +
+        '</div></div>';
+    }
+    openSheet(m.name, m.id + ' · ' + r.t, html);
+
+    mBody.querySelectorAll('[data-mact]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var act = b.dataset.mact;
+        if (act === 'save') {
+          if (!can('mid')) return;
+          var name = ($('#mmName').value || '').trim();
+          var sid = ($('#mmId').value || '').trim().toUpperCase();
+          if (name.length < 1) { toast('昵称不能为空'); return; }
+          if (!/^[A-Z0-9-]{3,12}$/.test(sid)) { toast('学号格式：字母数字 3–12 位'); return; }
+          if (data.members.some(function (x) { return x.id === sid && x !== m; })) { toast('学号已被占用'); return; }
+          var old = m.name;
+          m.name = name; m.id = sid;
+          save(); log('修改成员：' + old + ' → ' + name + '（' + sid + '）');
+          renderNotices(); toast('资料已更新'); openMember(sid);
+        } else if (act === 'mute') {
+          if (level === 'none') return;
+          m.muted = !m.muted;
+          save(); log((m.muted ? '禁言 ' : '解除禁言 ') + m.name);
+          toast(m.muted ? '已禁言 ' + m.name : '已解除禁言');
+          openMember(m.id);
+        } else if (act === 'ban') {
+          if (level !== 'high') { toast('仅高级管理可封禁'); return; }
+          m.banned = !m.banned;
+          save(); log((m.banned ? '封禁 ' : '解除封禁 ') + m.name);
+          toast(m.banned ? '已封禁 ' + m.name : '已解除封禁');
+          openMember(m.id);
+        } else if (act === 'junior') {
+          if (!can('mid')) return;
+          m.role = m.role === 'junior' ? 'member' : 'junior';
+          save(); log((m.role === 'junior' ? '任命普通管理：' : '撤销普通管理：') + m.name);
+          toast(m.role === 'junior' ? '已任命 ' + m.name + ' 为普通管理' : '已撤销');
+          openMember(m.id);
+        } else if (act === 'del') {
+          data.members = data.members.filter(function (x) { return x !== m; });
+          save(); log('删除成员：' + m.name + '（' + m.id + '）');
+          toast('已删除 ' + m.name);
+          openMembers();
+        }
+      });
+    });
+  }
+
+  /* ---------------- 发布公告 ---------------- */
+  function openCompose() {
+    if (!can('mid')) { toast('只有中级及以上可以发公告'); return; }
+    openSheet('发布公告', 'MID / HIGH · PUBLIC NOTICE',
+      '<div class="m-field"><label>内容 <span>NOTICE</span></label>' +
+      '<textarea id="mcText" maxlength="160" placeholder="写点什么，全班都会看到……"></textarea></div>' +
+      '<div class="m-pills">' +
+      '<button class="m-pill" id="mcPin" aria-pressed="true">置顶</button>' +
+      '<button class="m-pill" id="mcUrgent" aria-pressed="false">重要</button></div>' +
+      '<div class="m-act-row"><button class="m-btn solid" id="mcSend">发 布</button></div>' +
+      '<p class="m-note">发布后会出现在首页公告位；置顶会挤掉当前置顶。</p>');
+
+    $('#mcPin').addEventListener('click', function () {
+      this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+    $('#mcUrgent').addEventListener('click', function () {
+      this.setAttribute('aria-pressed', this.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+    });
+    $('#mcSend').addEventListener('click', function () {
+      var text = ($('#mcText').value || '').trim();
+      if (text.length < 2) { toast('至少写两个字'); return; }
+      var pinned = $('#mcPin').getAttribute('aria-pressed') === 'true';
+      if (pinned) data.notices.forEach(function (o) { o.pinned = false; });
+      data.notices.unshift({
+        id: C74.uid('n_'), text: text, author: session.name || '管理员',
+        urgent: $('#mcUrgent').getAttribute('aria-pressed') === 'true',
+        pinned: pinned, at: C74.stamp()
+      });
+      save(); log('发布公告：' + text.slice(0, 16));
+      renderNotices(); closeSheet(); toast('公告已发布');
+    });
+  }
+
+  /* ---------------- 管理菜单 ---------------- */
+  function openAdminMenu() {
+    var pending = data.requests.filter(function (r) { return r.status === 'pending'; }).length;
+    var html = '<div class="m-row" style="border:0;padding-top:0">' +
+      '<span class="av hi">' + esc(initial(session.name || '管')) + '</span>' +
+      '<span class="mi"><b>' + esc(session.name || '管理员') + '</b><span>' + LV_NAME[level] + ' · 已授权</span></span></div>';
+
+    if (can('junior')) {
+      html += menuRow('review', '审核申请', pending ? pending + ' 条待处理' : '暂无待处理') +
+        menuRow('members', '成员管理', '禁言 / 删除 / 任命') +
+        (can('mid') ? menuRow('compose', '发布公告', '公开发布 / 置顶') : '') +
+        (level === 'high' ? menuRow('highset', '高管设置', '密钥 / 清空区域') : '') +
+        '<div class="m-sec"><div class="m-sec-h">Session</div>' +
+        '<div class="m-act-row"><button class="m-btn danger" id="mExit">退出管理</button></div></div>';
+    } else {
+      html += '<div class="m-empty">你还没有管理权限</div>';
+    }
+    openSheet('管理中心', LV_NAME[level] + ' · 行内权限', html);
+
+    mBody.querySelectorAll('[data-menu]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var k = b.dataset.menu;
+        if (k === 'review') openReviews();
+        else if (k === 'members') openMembers();
+        else if (k === 'compose') openCompose();
+        else if (k === 'highset') openHighSettings();
+      });
+    });
+    var ex = $('#mExit');
+    if (ex) ex.addEventListener('click', function () {
+      try { sessionStorage.removeItem('c74_admin_session'); } catch (e) {}
+      closeSheet();
+      toast('已退出管理');
+      location.reload();
+    });
+  }
+  function menuRow(k, title, sub) {
+    return '<button class="m-row" data-menu="' + k + '">' +
+      '<span class="mi"><b>' + title + '</b><span>' + sub + '</span></span>' +
+      '<span class="m-tag">›</span></button>';
+  }
+
+  /* ---------------- 审核 ---------------- */
+  function openReviews() {
+    var list = data.requests.filter(function (r) { return r.status === 'pending'; });
+    var html = list.length ? list.map(function (r) {
+      return '<div class="m-sec" data-rid="' + r.id + '">' +
+        '<div class="m-sec-h">' + esc(r.by) + ' · ' + esc(r.type) + ' · ' + esc(r.at) + '</div>' +
+        '<p style="margin:0 0 8px;font-size:12.5px;line-height:1.7;color:#cfdcef">' + esc(r.text) + '</p>' +
+        '<div class="m-act-row"><button class="m-btn" data-r="no">驳回</button>' +
+        '<button class="m-btn solid" data-r="ok">通过并发布</button></div></div>';
+    }).join('') : '<div class="m-empty">没有待审核的申请</div>';
+    openSheet('审核申请', 'JUNIOR / MID / HIGH', html);
+
+    mBody.querySelectorAll('[data-r]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var box = b.closest('[data-rid]');
+        var r = data.requests.filter(function (x) { return x.id === box.dataset.rid; })[0];
+        if (!r) return;
+        if (b.dataset.r === 'no') {
+          r.status = 'no';
+          save(); log('驳回申请：' + r.by + ' · ' + r.text.slice(0, 12));
+          toast('已驳回'); openReviews();
+          return;
+        }
+        r.status = 'ok';
+        publishNotice({ text: r.text, author: r.by, urgent: r.type === '寻人启事', images: r.images || [] });
+        save(); log('通过申请并发布：' + r.by + ' · ' + r.text.slice(0, 12));
+        renderNotices(); toast('已通过并发布'); openReviews();
+      });
+    });
+  }
+
+  /* ---------------- 申请 ---------------- */
+  var reqImgs = [];
+  var reqPicker = null;
+
+  function shrinkImg(url) {
+    return new Promise(function (res) {
+      var img = new Image();
+      img.onload = function () {
+        var max = 1000;
+        var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+        var k = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        var cx = cv.getContext('2d');
+        cx.fillStyle = '#070c16'; cx.fillRect(0, 0, cv.width, cv.height);
+        cx.drawImage(img, 0, 0, cv.width, cv.height);
+        var out = null;
+        try { out = cv.toDataURL('image/jpeg', .78); } catch (e) {}
+        res(out && out.length < url.length ? out : url);
+      };
+      img.onerror = function () { res(url); };
+      img.src = url;
+    });
+  }
+
+  function ensureReqPicker() {
+    if (reqPicker) return reqPicker;
+    reqPicker = document.createElement('input');
+    reqPicker.type = 'file';
+    reqPicker.accept = 'image/*';
+    reqPicker.multiple = true;
+    reqPicker.style.display = 'none';
+    document.body.appendChild(reqPicker);
+    reqPicker.addEventListener('change', function () {
+      var room = 3 - reqImgs.length;
+      var files = Array.prototype.slice.call(reqPicker.files || []).slice(0, Math.max(0, room));
+      if (!files.length) return;
+      var i = 0;
+      (function next() {
+        if (i >= files.length) { renderReqThumbs(); return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+          shrinkImg(fr.result).then(function (u) { reqImgs.push(u); next(); });
+        };
+        fr.onerror = function () { next(); };
+        fr.readAsDataURL(files[i++]);
+      })();
+    });
+    return reqPicker;
+  }
+
+  function renderReqThumbs() {
+    var box = $('#mrThumbs');
+    if (!box) return;
+    box.innerHTML = reqImgs.map(function (u, i) {
+      return '<span class="mr-th"><img src="' + u + '" alt="">' +
+        '<b data-rdel="' + i + '">×</b></span>';
+    }).join('');
+    $$('#mrThumbs [data-rdel]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        reqImgs.splice(parseInt(b.getAttribute('data-rdel'), 10), 1);
+        renderReqThumbs();
+      });
+    });
+    var c = $('#mrCount');
+    if (c) c.textContent = reqImgs.length ? reqImgs.length + ' / 3 张' : '未选择';
+  }
+
+  function openRequest() {
+    if (isBlocked()) { toast('你已被限制，暂时不能申请'); return; }
+    reqImgs = [];
+    var mine = data.requests.filter(function (r) { return r.by === (session.name || session.id); }).slice(0, 3);
+    var html = '<div class="m-field"><label>申请类型 <span>TYPE</span></label>' +
+      '<div class="m-pills" id="mrType">' +
+      '<button class="m-pill" data-t="公告" aria-pressed="true">发公告</button>' +
+      '<button class="m-pill" data-t="置顶消息" aria-pressed="false">置顶消息</button>' +
+      '<button class="m-pill" data-t="寻人启事" aria-pressed="false">寻人启事</button></div></div>' +
+      '<div class="m-field"><label>内容 <span>REQUEST</span></label>' +
+      '<textarea id="mrText" maxlength="160" placeholder="写清楚要发什么、为什么置顶……"></textarea></div>' +
+      '<div class="m-field" id="mrPhoto" hidden><label>照片 <span>PHOTO · 最多 3 张</span></label>' +
+      '<div class="m-act-row"><button class="m-btn" id="mrPick" type="button">选择照片</button>' +
+      '<span class="m-note" id="mrCount" style="margin:0;align-self:center">未选择</span></div>' +
+      '<div class="mr-thumbs" id="mrThumbs"></div></div>' +
+      '<div class="m-act-row"><button class="m-btn solid" id="mrSend">提交申请</button></div>' +
+      '<p class="m-note" id="mrHint">有审核权限的账号（普通管理及以上）提交后会直接发布，不用再审自己。</p>';
+
+    if (mine.length) {
+      html += '<div class="m-sec"><div class="m-sec-h">我的申请</div>' + mine.map(function (r) {
+        return '<div class="m-row" style="cursor:default"><span class="mi"><b>' + esc(r.type) + '</b>' +
+          '<span>' + esc(r.text.slice(0, 30)) + '</span></span>' +
+          '<span class="m-tag">' + (r.status === 'pending' ? '待审' : r.status === 'ok' ? '已发布' : '已驳回') + '</span></div>';
+      }).join('') + '</div>';
+    }
+    openSheet('申请', can('junior') ? '你负责审核 · 发布即生效' : '提交给普通管理审核', html);
+
+    var type = '公告';
+    var photoField = $('#mrPhoto');
+    if (can('junior')) {
+      var hint = $('#mrHint');
+      if (hint) hint.textContent = '你本身有审核权限，提交后直接发布。';
+    }
+
+    mBody.querySelectorAll('#mrType .m-pill').forEach(function (p) {
+      p.addEventListener('click', function () {
+        mBody.querySelectorAll('#mrType .m-pill').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+        p.setAttribute('aria-pressed', 'true');
+        type = p.getAttribute('data-t');
+        if (photoField) photoField.hidden = (type !== '寻人启事');
+      });
+    });
+
+    $('#mrPick') && $('#mrPick').addEventListener('click', function () {
+      var p = ensureReqPicker();
+      p.value = '';
+      p.click();
+    });
+
+    $('#mrSend').addEventListener('click', function () {
+      var text = ($('#mrText').value || '').trim();
+      if (text.length < 2) { toast('至少写两个字'); return; }
+      var imgs = type === '寻人启事' ? reqImgs.slice() : [];
+      var by = session.name || session.id || '同学';
+      var auto = can('junior');
+
+      data.requests.unshift({
+        id: C74.uid('r_'), type: type, text: text, images: imgs,
+        by: by, at: C74.stamp(), status: auto ? 'ok' : 'pending'
+      });
+
+      if (auto) {
+        publishNotice({ text: text, author: by, urgent: type === '寻人启事', images: imgs });
+        save();
+        log('发布' + type + '：' + text.slice(0, 12));
+        renderNotices();
+        decoratePosts();
+        closeSheet();
+        toast((LV_SHORT[level] || LV_NAME[level]) + '权限：已直接发布');
+      } else {
+        save();
+        log('提交申请：' + type);
+        closeSheet();
+        toast('申请已提交，等待审核');
+      }
+    });
+  }
+
+  /* ---------------- 高级操作 ---------------- */
+  function openHighSettings() {
+    if (level !== 'high') { toast('仅高级管理可进入'); return; }
+    var k = data.keys;
+    openSheet('高管设置', 'ROOT · 密钥与区域',
+      '<div class="m-sec"><div class="m-sec-h">修改中级密钥</div>' +
+      '<div class="m-field"><label>旧密钥 <span>OLD KEY</span></label><div class="inp"><input id="omKey" maxlength="6" inputmode="numeric" placeholder="先输入旧密钥"></div></div>' +
+      '<div class="m-field"><label>新密钥 <span>NEW KEY</span></label><div class="inp"><input id="nmKey" maxlength="6" inputmode="numeric" placeholder="4–6 位数字"></div></div></div>' +
+      '<div class="m-sec"><div class="m-sec-h">修改高级密钥</div>' +
+      '<div class="m-field"><label>旧密钥 <span>OLD KEY</span></label><div class="inp"><input id="ohKey" maxlength="6" inputmode="numeric" placeholder="先输入旧密钥"></div></div>' +
+      '<div class="m-field"><label>新密钥 <span>NEW KEY</span></label><div class="inp"><input id="nhKey" maxlength="6" inputmode="numeric" placeholder="4–6 位数字"></div></div></div>' +
+      '<div class="m-act-row"><button class="m-btn solid" id="hsSave">保存密钥</button></div>' +
+      '<div class="m-sec"><div class="m-sec-h">危险操作</div>' +
+      '<p class="m-note" style="margin-top:0">清空区域内所有公告和动态，成员与密钥保留。</p>' +
+      '<div class="m-act-row"><button class="m-btn danger" id="hsPurge">清空区域内所有消息</button></div>' +
+      '<div id="hsConfirm" style="display:none;margin-top:10px">' +
+      '<p class="m-note" style="color:#ff9bb0">确定要清空吗？此操作不可撤销。</p>' +
+      '<div class="m-act-row"><button class="m-btn" id="hsCancel">取消</button>' +
+      '<button class="m-btn danger" id="hsYes">确认清空</button></div></div></div>' +
+      '<p class="m-note">密钥只保存在本机；接后端后由服务端校验并存哈希。</p>');
+
+    $('#hsSave').addEventListener('click', function () {
+      var om = ($('#omKey').value || '').trim(), nm = ($('#nmKey').value || '').trim();
+      var oh = ($('#ohKey').value || '').trim(), nh = ($('#nhKey').value || '').trim();
+      if (!om || !oh) { toast('请先输入两个旧密钥'); return; }
+      if (om !== data.keys.mid.key) { toast('中级旧密钥不正确'); return; }
+      if (oh !== data.keys.high.key) { toast('高级旧密钥不正确'); return; }
+      if (!/^\d{4,6}$/.test(nm) || !/^\d{4,6}$/.test(nh)) { toast('新密钥需 4–6 位数字'); return; }
+      if (nm === nh) { toast('两级密钥不能相同'); return; }
+      data.keys.mid.key = nm;
+      data.keys.high.key = nh;
+      save(); log('更换了中级/高级密钥');
+      toast('密钥已更新'); closeSheet();
+    });
+
+    $('#hsPurge').addEventListener('click', function () {
+      $('#hsConfirm').style.display = 'block';
+      this.style.display = 'none';
+    });
+    $('#hsCancel').addEventListener('click', function () {
+      $('#hsConfirm').style.display = 'none';
+      $('#hsPurge').style.display = '';
+    });
+    $('#hsYes').addEventListener('click', function () {
+      data.notices = [];
+      data.posts.forEach(function (p) { p.hidden = true; p.pinned = false; });
+      save(); log('清空了区域内所有消息');
+      renderNotices(); decoratePosts(); closeSheet(); toast('已清空区域内所有消息');
+    });
+  }
+
+  /* ---------------- 禁言拦截 ---------------- */
+  function blockIfMuted(e) {
+    if (!isBlocked()) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    toast('你已被限制，不能评论');
+  }
+  var sendBtn = document.getElementById('cSend');
+  var cInput = document.getElementById('cInput');
+  if (sendBtn) sendBtn.addEventListener('click', blockIfMuted, true);
+  if (cInput) cInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') blockIfMuted(e);
+  }, true);
+
+  /* ---------------- 申请入口 ---------------- */
+  function mountRequestEntry() {
+    var sub = document.querySelector('.sec .subline');
+    if (!sub || document.getElementById('reqBtn')) return;
+    var b = document.createElement('button');
+    b.className = 'req-link';
+    b.id = 'reqBtn';
+    b.innerHTML = '<b>申请</b> 置顶 / 公告 / 寻人启事';
+    b.addEventListener('click', openRequest);
+    sub.parentNode.appendChild(b);
+  }
+
+  /* ---------------- 启动 ---------------- */
+  var mb = document.getElementById('membersBtn');
+  if (mb) mb.addEventListener('click', openMembers);
+
+  mountChip();
+  mountRequestEntry();
+  renderNotices();
+  decoratePosts();
+})();

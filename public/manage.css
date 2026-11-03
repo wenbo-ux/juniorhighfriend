@@ -1,0 +1,120 @@
+/* =========================================================
+   七年四班 · 行内管理（manager）
+   验证通过后不进入独立后台，直接在主站授予权限
+   ========================================================= */
+.m-chip{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;display:inline-flex;align-items:center;gap:5px;padding:5px 8px;border-radius:20px;
+  border:1px solid rgba(95,227,255,.34);background:rgba(95,227,255,.08);
+  font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#9fe9ff;white-space:nowrap}
+.m-chip i{width:5px;height:5px;border-radius:50%;background:#5fe3ff;box-shadow:0 0 8px #5fe3ff}
+.m-chip.high{color:#d8c9ff;border-color:rgba(160,140,255,.4);background:rgba(160,140,255,.1)}
+.m-chip.high i{background:#a08cff;box-shadow:0 0 8px #a08cff}
+.m-chip.jr{color:#ffd79a;border-color:rgba(255,182,72,.36);background:rgba(255,182,72,.08)}
+.m-chip.jr i{background:#ffb648;box-shadow:0 0 8px #ffb648}
+
+/* 卡片上的管理按钮 */
+.adm-bar{display:flex;align-items:center;gap:5px;margin-top:7px;padding-top:7px;
+  border-top:1px dashed rgba(120,185,255,.14);flex-wrap:wrap}
+.adm-act{padding:4px 7px;border-radius:6px;border:1px solid rgba(120,185,255,.2);
+  font:8.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;color:#8fa3c0;transition:.15s}
+.adm-act:active{transform:scale(.95)}
+.adm-act.on{color:#5fe3ff;border-color:rgba(95,227,255,.4);background:rgba(95,227,255,.08)}
+.adm-act.warn{color:#ffb08a;border-color:rgba(255,120,80,.3)}
+.adm-act.danger{color:#ff8fa4;border-color:rgba(255,95,122,.3)}
+.adm-tag{font:8px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;color:var(--dim-2);margin-left:auto}
+
+/* 申请入口 */
+.req-link{display:inline-flex;align-items:center;gap:6px;margin-top:9px;padding:6px 10px;
+  border-radius:8px;border:1px solid rgba(120,185,255,.18);background:rgba(12,21,36,.55);
+  font-size:10.5px;letter-spacing:.06em;color:#9db3d0}
+.req-link b{color:#5fe3ff;font:600 9px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em}
+
+/* 抽屉 */
+.m-mask{position:fixed;inset:0;z-index:90;display:none;background:rgba(2,5,10,.66);
+  backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)}
+.m-mask.on{display:block}
+.m-sheet{position:fixed;left:0;right:0;bottom:0;z-index:91;display:none;
+  padding:0 12px calc(12px + env(safe-area-inset-bottom))}
+.m-sheet.on{display:block}
+.m-in{max-width:540px;margin:0 auto;border:1px solid rgba(120,185,255,.3);border-radius:20px;overflow:hidden;
+  background:linear-gradient(175deg,rgba(16,30,50,.99),rgba(7,12,22,.99));
+  box-shadow:0 -18px 60px rgba(0,0,0,.65)}
+.m-hd{display:flex;align-items:center;gap:8px;padding:13px 14px;border-bottom:1px solid rgba(120,185,255,.14)}
+.m-hd b{font-size:13.5px;letter-spacing:.04em}
+.m-hd small{display:block;margin-top:3px;font:8.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.16em;color:var(--dim-2)}
+.m-hd .sp{flex:1}
+.m-x{width:30px;height:30px;display:grid;place-items:center;border-radius:50%;
+  border:1px solid rgba(120,185,255,.2);color:#9db3d0;flex:0 0 auto}
+.m-x svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.m-body{padding:13px 14px 16px;max-height:70vh;overflow:auto}
+.m-row{display:flex;align-items:center;gap:10px;width:100%;padding:10px 0;border:0;background:none;
+  border-bottom:1px solid rgba(120,185,255,.08);text-align:left}
+.m-row:last-child{border-bottom:0}
+.m-row .av{width:32px;height:32px;flex:0 0 auto;border-radius:10px;display:grid;place-items:center;
+  font-size:12px;color:#0a1424;background:linear-gradient(140deg,#7fe6ff,#8f8bff)}
+.m-row .av.jr{background:linear-gradient(140deg,#ffd79a,#ffb648)}
+.m-row .av.hi{background:linear-gradient(140deg,#d9c8ff,#ff9ec4)}
+.m-row .mi{flex:1;min-width:0}
+.m-row .mi b{display:block;font-size:12.5px;color:#e3eefb;font-weight:600}
+.m-row .mi span{display:block;margin-top:3px;font:8.5px/1 ui-monospace,Menlo,monospace;
+  letter-spacing:.12em;color:var(--dim-2)}
+.m-tag{font:8px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;padding:4px 6px;border-radius:5px;
+  border:1px solid rgba(120,185,255,.2);color:#9db3d0}
+.m-tag.jr{color:#ffd79a;border-color:rgba(255,182,72,.3)}
+.m-tag.hi{color:#d8c9ff;border-color:rgba(160,140,255,.32)}
+.m-tag.mute{color:#ff8fa4;border-color:rgba(255,95,122,.3)}
+
+.m-act-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.m-btn{flex:1;min-width:120px;height:40px;border-radius:11px;border:1px solid rgba(120,185,255,.2);
+  background:rgba(12,21,36,.6);font-size:12px;letter-spacing:.06em;color:#c2d4ea}
+.m-btn.solid{color:#eaf9ff;border-color:rgba(95,227,255,.4);
+  background:linear-gradient(120deg,rgba(95,227,255,.2),rgba(160,140,255,.16));font-weight:600}
+.m-btn.danger{color:#ff9bb0;border-color:rgba(255,95,122,.35);background:rgba(255,95,122,.08)}
+.m-btn:active{transform:scale(.98)}
+
+.m-field{margin-bottom:12px}
+.m-field label{display:flex;justify-content:space-between;gap:8px;
+  font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+.m-field .inp{display:flex;align-items:center;gap:8px;margin-top:7px;padding:0 11px;height:42px;
+  border:1px solid rgba(120,185,255,.16);border-radius:11px;background:rgba(5,10,20,.7)}
+.m-field .inp input{flex:1;min-width:0;background:none;border:0;outline:none;color:#e7f0fd;font-size:12.5px}
+.m-field textarea{width:100%;min-height:86px;margin-top:7px;padding:10px 11px;border-radius:11px;
+  border:1px solid rgba(120,185,255,.16);background:rgba(5,10,20,.7);color:#e7f0fd;
+  font-size:12.5px;line-height:1.7;outline:none;resize:vertical}
+.m-pills{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.m-pill{padding:7px 10px;border-radius:8px;border:1px solid rgba(120,185,255,.18);
+  background:rgba(12,21,36,.55);font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;color:#8fa3c0}
+.m-pill[aria-pressed="true"]{color:#5fe3ff;border-color:rgba(95,227,255,.4);background:rgba(95,227,255,.08)}
+
+.m-empty{padding:24px 10px;text-align:center;font-size:11.5px;color:#5f7397;letter-spacing:.06em}
+.m-note{margin-top:9px;font:9px/1.6 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#5a6f8f}
+.m-toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));z-index:120;
+  transform:translate(-50%,12px);opacity:0;pointer-events:none;
+  padding:9px 14px;border-radius:11px;border:1px solid rgba(120,185,255,.26);
+  background:rgba(10,20,34,.96);font-size:11.5px;letter-spacing:.05em;color:#cfe6ff;
+  transition:.2s;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis}
+.m-toast.on{opacity:1;transform:translate(-50%,0)}
+.m-sec{margin-top:14px}
+.m-sec-h{display:flex;align-items:center;gap:8px;margin:0 0 8px;
+  font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.18em;color:var(--dim-2);text-transform:uppercase}
+.m-sec-h::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,rgba(120,185,255,.2),transparent)}
+
+/* ---------- 申请里的照片 ---------- */
+.mr-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.mr-thumbs:empty{display:none}
+.mr-th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;
+  border:1px solid rgba(120,185,255,.2);background:#070c16}
+.mr-th img{width:100%;height:100%;object-fit:cover;display:block}
+.mr-th b{position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;
+  background:rgba(4,8,16,.85);color:#dcecff;font:11px/17px -apple-system,sans-serif;
+  text-align:center;border:1px solid rgba(150,215,255,.3)}
+
+/* ---------- 公告里的图片 ---------- */
+.n-imgs{display:flex;gap:4px;margin-top:8px}
+.n-imgs img{width:100%;max-height:168px;object-fit:cover;border-radius:9px;
+  border:1px solid rgba(255,182,72,.22);display:block}
+.n-imgs.multi img{width:calc((100% - 8px)/3);max-height:92px}
+
+/* iOS：输入框小于 16px 聚焦会自动放大页面，统一抬到 16px */
+@media (max-width: 820px){
+  .m-field textarea,.m-field .inp input,.m-field input,.c-form input{font-size:16px}
+}
