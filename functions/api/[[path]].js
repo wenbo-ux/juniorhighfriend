@@ -18,7 +18,7 @@
    ========================================================= */
 const enc = new TextEncoder();
 const RANK = { member: 0, junior: 1, mid: 2, high: 3 };
-const ITER = 120000;
+const ITER = 100000;
 
 async function handle(req, env) {
     const url = new URL(req.url);
