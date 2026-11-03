@@ -44,6 +44,9 @@ async function handle(req, env) {
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
+      const dm = path.match(/^\/api\/posts\/([\w-]+)$/);
+      if (dm && req.method === 'DELETE') return await deletePost(req, env, cors, dm[1]);
+
       const m = path.match(/^\/api\/reports\/([\w-]+)\/review$/);
       if (m && req.method === 'POST') return await reviewReport(req, env, cors, m[1]);
 
@@ -290,6 +293,17 @@ async function reviewReport(req, env, cors, id) {
     .bind(uid('l_'), nowISO(), u.name || u.user, u.level,
       (action === 'ok' ? '举报成立：' : '举报驳回：') + (r.target_name || r.target_id)).run();
 
+  return json({ ok: true }, 200, cors);
+}
+
+async function deletePost(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const p = await env.DB.prepare('SELECT id, who_id FROM posts WHERE id = ?').bind(id).first();
+  if (!p) return json({ error: '不存在' }, 404, cors);
+  const mine = p.who_id === u.id;
+  if (!mine && !need(u, 'junior')) return json({ error: '只能删自己的动态' }, 403, cors);
+  await env.DB.prepare('UPDATE posts SET hidden = 1 WHERE id = ?').bind(id).run();
   return json({ ok: true }, 200, cors);
 }
 
