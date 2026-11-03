@@ -167,7 +167,7 @@ async function login(req, env, cors) {
   const pass = String(body.pass || '');
   if (!user || !pass) return json({ error: '账号密码都要填' }, 400, cors);
 
-  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
+  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ? OR name = ?').bind(user, user).first();
   if (!acc || !(await checkPass(pass, acc.pass))) return json({ error: '账号或密码不对' }, 401, cors);
 
   const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
@@ -401,8 +401,8 @@ async function register(req, env, cors) {
   const hash = await makePass(pass);
   const id = uid('a_');
   await env.DB.prepare('INSERT INTO accounts (id,user,name,level,pass,created_at) VALUES (?,?,?,?,?,?)')
-    .bind(id, user, user, 'member', hash, new Date().toISOString()).run();
-  return json({ ok: true, user: { id, user, name: user, level: 'member' } }, 200, cors);
+    .bind(id, user, String(b.name || user).slice(0, 20), 'member', hash, new Date().toISOString()).run();
+  return json({ ok: true, user: { id, user, name: String(b.name || user).slice(0, 20), level: 'member' } }, 200, cors);
 }
 
 /* ---------------- 日志 ---------------- */
