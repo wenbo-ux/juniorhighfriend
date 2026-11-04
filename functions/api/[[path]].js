@@ -46,6 +46,9 @@ async function handle(req, env) {
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
+      const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset)$/);
+      if (am && req.method === 'POST') return await adminAccount(req, env, cors, am[1], am[2]);
+
       const dm = path.match(/^\/api\/posts\/([\w-]+)$/);
       if (dm && req.method === 'DELETE') return await deletePost(req, env, cors, dm[1]);
 
@@ -487,6 +490,34 @@ async function register(req, env, cors) {
   await env.DB.prepare('UPDATE codes SET used = 1, used_by = ?, used_at = ? WHERE code = ?')
     .bind(user, new Date().toISOString(), String(code).replace(/[^A-Z0-9]/g, '')).run();
   return json({ ok: true, user: { id, user, name: String(b.name || user).slice(0, 20), level: 'member' } }, 200, cors);
+}
+
+async function adminAccount(req, env, cors, id, action) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'high')) return json({ error: '只有高管能改账户等级或重置密码' }, 403, cors);
+
+  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
+  if (!acc) return json({ error: '账户不存在' }, 404, cors);
+
+  const b = await req.json().catch(() => ({}));
+
+  if (action === 'level') {
+    const lv = String(b.level || '');
+    if (['member', 'junior', 'mid', 'high'].indexOf(lv) < 0) return json({ error: '等级不对' }, 400, cors);
+    if (acc.id === u.id && lv !== acc.level) return json({ error: '不能改自己的等级' }, 400, cors);
+    await env.DB.prepare('UPDATE accounts SET level = ? WHERE id = ?').bind(lv, id).run();
+    await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+      .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '调整等级：' + (acc.name || acc.user) + ' → ' + lv).run();
+    return json({ ok: true, level: lv }, 200, cors);
+  }
+
+  const pass = String(b.pass || '');
+  if (pass.length < 4) return json({ error: '密码至少 4 位' }, 400, cors);
+  const hash = await makePass(pass);
+  await env.DB.prepare('UPDATE accounts SET pass = ? WHERE id = ?').bind(hash, id).run();
+  await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
+  return json({ ok: true }, 200, cors);
 }
 
 /* ---------------- 日志 ---------------- */
