@@ -305,7 +305,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   .btn{font-size:11.5px;padding:10px 4px}
 }
 </style>
-<link rel="stylesheet" href="manage.css?v=4">
+<link rel="stylesheet" href="manage.css?v=5">
 <link rel="stylesheet" href="upload.css?v=3">
 </head>
 <body>
@@ -750,8 +750,15 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     tab.addEventListener('click', function(){
       document.querySelectorAll('.tab').forEach(function(o){ o.classList.remove('active'); });
       tab.classList.add('active');
-      if(tab.dataset.tab !== '首页'){ toast('「' + tab.dataset.tab + '」页面还没做'); }
-      else { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      var name = tab.dataset.tab;
+      if(name === '我的'){
+        if(window.C74Account) window.C74Account.open();
+        else toast('账户面板还没准备好');
+      } else if(name !== '首页'){
+        toast('「' + name + '」页面还没做');
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     });
   });
 })();
@@ -931,7 +938,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   };
 })();
 </script>
-<script src="manage.js?v=6"></script>
+<script src="manage.js?v=7"></script>
 <script src="upload.js?v=9"></script>
 </body>
 </html>

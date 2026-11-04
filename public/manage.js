@@ -708,6 +708,65 @@
     if (e.key === 'Enter') blockIfMuted(e);
   }, true);
 
+  /* ---------------- 我的账户（改昵称 / 改密码） ---------------- */
+  var LV_FULL = { high: '高级管理', mid: '中级管理', junior: '普通管理', teacher: '老师', member: '班级成员' };
+
+  function openAccount() {
+    var u = C74.me() || {};
+    if (!u.id) { toast('离线模式：先联网登录再改'); return; }
+    var lv = LV_FULL[u.level] || '班级成员';
+    var html =
+      '<div class="m-row" style="border:0;padding-top:0">' +
+        '<span class="av hi">' + esc(initial(u.name || u.user || '?')) + '</span>' +
+        '<span class="mi"><b>' + esc(u.name || u.user) + '</b><span>' + esc(u.user) + ' · ' + lv + '</span></span>' +
+      '</div>' +
+      '<div class="m-field"><label>昵称 <span>NAME</span></label>' +
+        '<input class="m-inp" id="acName" maxlength="16" value="' + esc(u.name || u.user || '') + '"></div>' +
+      '<div class="m-field"><label>原密码 <span>REQUIRED · 必填</span></label>' +
+        '<input class="m-inp" id="acOld" type="password" autocomplete="current-password" placeholder="输入当前密码"></div>' +
+      '<div class="m-field"><label>新密码 <span>NEW · 不改留空</span></label>' +
+        '<input class="m-inp" id="acNew" type="password" autocomplete="new-password" placeholder="至少 4 位"></div>' +
+      '<div class="m-act-row"><button class="m-btn solid" id="acSave">保 存 修 改</button></div>' +
+      '<p class="m-note">改密码后，其它设备上的登录会失效，需要重新登录。改昵称只影响以后显示的内容。</p>';
+
+    openSheet('我的账户', 'ACCOUNT', html);
+
+    $('#acSave').addEventListener('click', function () {
+      var name = ($('#acName').value || '').trim();
+      var oldP = $('#acOld').value || '';
+      var newP = $('#acNew').value || '';
+      if (!oldP) { toast('请先输入原密码'); $('#acOld').focus(); return; }
+      if (!name && !newP) { toast('没有要改的内容'); return; }
+      if (newP && newP.length < 4) { toast('新密码至少 4 位'); return; }
+
+      var btn = this;
+      btn.disabled = true; btn.textContent = '保 存 中…';
+      C74.api('/api/account/update', {
+        method: 'POST',
+        body: { oldPass: oldP, name: name, newPass: newP }
+      }).then(function (res) {
+        var nu = res.user || {};
+        C74.setAuth(C74.token(), nu);
+        try {
+          var sess = JSON.parse(sessionStorage.getItem('c74_session') || '{}');
+          sess.name = nu.name; sess.role = nu.level; sess.level = nu.level;
+          sessionStorage.setItem('c74_session', JSON.stringify(sess));
+          var ad = JSON.parse(sessionStorage.getItem('c74_admin_session') || 'null');
+          if (ad) { ad.user = nu.name; sessionStorage.setItem('c74_admin_session', JSON.stringify(ad)); }
+        } catch (e) {}
+        C74.refreshBoot && C74.refreshBoot();
+        closeSheet();
+        toast('已保存，正在刷新…');
+        setTimeout(function () { location.reload(); }, 700);
+      }).catch(function (err) {
+        btn.disabled = false; btn.textContent = '保 存 修 改';
+        toast(err.message || '保存失败');
+      });
+    });
+  }
+
+  window.C74Account = { open: openAccount };
+
   /* ---------------- 申请入口 ---------------- */
   function mountRequestEntry() {
     var sub = document.querySelector('.sec .subline');
