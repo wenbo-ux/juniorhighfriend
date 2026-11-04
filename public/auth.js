@@ -70,6 +70,8 @@
           sessionStorage.setItem('c74_session', JSON.stringify({
             id: u.id, name: u.name, role: u.level, level: u.level, at: Date.now()
           }));
+          /* 先清掉上一个账号残留的管理态 */
+          sessionStorage.removeItem('c74_admin_session');
           /* 账号等级直接绑定管理权限：高管/中管/普管登录即生效 */
           if (u.level === 'high' || u.level === 'mid' || u.level === 'junior') {
             sessionStorage.setItem('c74_admin_session', JSON.stringify({

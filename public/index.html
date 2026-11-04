@@ -738,7 +738,13 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   document.getElementById('search')?.addEventListener('click', function(){ toast('搜索：还没做'); });
   document.getElementById('back')?.addEventListener('click', function(){ toast('返回上一层'); });
   document.getElementById('exit')?.addEventListener('click', function(){
-    try { sessionStorage.removeItem('c74_session'); } catch(e){}
+    try {
+      sessionStorage.removeItem('c74_session');
+      sessionStorage.removeItem('c74_admin_session');
+      sessionStorage.removeItem('c74_undo_v1');
+      localStorage.removeItem('c74_token');
+      localStorage.removeItem('c74_me');
+    } catch(e){}
     location.href = 'auth.html';
   });
 
@@ -935,7 +941,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   };
 })();
 </script>
-<script src="manage.js?v=11"></script>
+<script src="manage.js?v=12"></script>
 <script src="upload.js?v=11"></script>
 </body>
 </html>

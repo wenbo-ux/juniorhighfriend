@@ -23,6 +23,17 @@
     })[0] || null;
   }
   var me = findMember();
+
+  /* 登录的账号若只是普通成员，丢弃残留的管理态（换号登录常见） */
+  (function () {
+    var acc = null;
+    try { acc = (window.C74 && C74.me) ? C74.me() : null; } catch (e) {}
+    if (acc && acc.level === 'member' && adminSession) {
+      adminSession = null;
+      try { sessionStorage.removeItem('c74_admin_session'); } catch (e) {}
+    }
+  })();
+
   var level = 'none';
   if (adminSession && (adminSession.level === 'junior' || adminSession.level === 'mid' || adminSession.level === 'high')) {
     level = adminSession.level;
@@ -205,17 +216,32 @@
     if (!n) return;
     if (b.dataset.nact === 'pin') {
       if (!can('mid')) { toast('普通管理不能置顶'); return; }
-      n.pinned = !n.pinned;
-      if (n.pinned) data.notices.forEach(function (o) { if (o !== n) o.pinned = false; });
-      log((n.pinned ? '置顶公告：' : '取消置顶：') + n.text.slice(0, 14));
-      save(); renderNotices();
-      toast(n.pinned ? '已置顶' : '已取消置顶');
+      var want = !n.pinned;
+      var apply = function () {
+        n.pinned = want;
+        if (want) data.notices.forEach(function (o) { if (o !== n) o.pinned = false; });
+        log((want ? '置顶公告：' : '取消置顶：') + n.text.slice(0, 14));
+        renderNotices();
+        toast(want ? '已置顶' : '已取消置顶');
+      };
+      if (window.C74 && C74.online && C74.online()) {
+        C74.api('/api/notices/' + encodeURIComponent(n.id) + '/pin', { method: 'POST', body: { pinned: want } })
+          .then(function () { apply(); C74.refreshBoot && C74.refreshBoot(); })
+          .catch(function (err) { toast(err.message || '操作失败'); });
+      } else { apply(); save(); }
     } else {
       if (level === 'none') return;
-      data.notices = data.notices.filter(function (x) { return x !== n; });
-      log('删除公告：' + n.text.slice(0, 14));
-      save(); renderNotices();
-      toast('公告已删除');
+      var drop = function () {
+        data.notices = data.notices.filter(function (x) { return x !== n; });
+        log('删除公告：' + n.text.slice(0, 14));
+        renderNotices();
+        toast('公告已删除');
+      };
+      if (window.C74 && C74.online && C74.online()) {
+        C74.api('/api/notices/' + encodeURIComponent(n.id), { method: 'DELETE' })
+          .then(function () { drop(); C74.refreshBoot && C74.refreshBoot(); })
+          .catch(function (err) { toast(err.message || '删除失败'); });
+      } else { drop(); save(); }
     }
   });
 
@@ -274,16 +300,35 @@
     if (!p) return;
     if (b.dataset.pact === 'pin') {
       if (!can('mid')) { toast('普通管理不能置顶'); return; }
-      p.pinned = !p.pinned;
-      if (p.pinned) data.posts.forEach(function (o) { if (o !== p) o.pinned = false; });
-      log((p.pinned ? '置顶动态：' : '取消置顶：') + p.who);
-      save(); decoratePosts();
-      toast(p.pinned ? '已置顶到首页' : '已取消置顶');
+      var wantP = !p.pinned;
+      var applyP = function () {
+        p.pinned = wantP;
+        if (wantP) data.posts.forEach(function (o) { if (o !== p) o.pinned = false; });
+        log((wantP ? '置顶动态：' : '取消置顶：') + p.who);
+        decoratePosts();
+        toast(wantP ? '已置顶到首页' : '已取消置顶');
+      };
+      if (window.C74 && C74.online && C74.online()) {
+        C74.api('/api/posts/' + encodeURIComponent(p.id) + '/pin', { method: 'POST', body: { pinned: wantP } })
+          .then(function () { applyP(); C74.refreshBoot && C74.refreshBoot(); })
+          .catch(function (err) { toast(err.message || '操作失败'); });
+      } else { applyP(); save(); }
     } else {
-      p.hidden = true; p.pinned = false;
-      log('删除动态：' + p.who + ' · ' + p.text.slice(0, 12));
-      save(); decoratePosts();
-      toast('消息已删除');
+      var dropP = function () {
+        p.hidden = true; p.pinned = false;
+        log('删除动态：' + p.who + ' · ' + p.text.slice(0, 12));
+        decoratePosts();
+        toast('消息已删除');
+      };
+      if (window.C74 && C74.online && C74.online()) {
+        C74.api('/api/posts/' + encodeURIComponent(p.id), { method: 'DELETE' })
+          .then(function () {
+            dropP();
+            if (window.C74Undo) C74Undo.set({ type: 'post.delete', id: p.id });
+            C74.refreshBoot && C74.refreshBoot();
+          })
+          .catch(function (err) { toast(err.message || '删除失败'); });
+      } else { dropP(); save(); }
     }
   });
 
