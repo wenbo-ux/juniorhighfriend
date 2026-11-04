@@ -350,8 +350,8 @@
 
     if (!window.C74 || !C74.api) { localFallback(); return; }
 
-    gateMsg(level, '正在核对账号…');
-    C74.api('/api/login', { method: 'POST', body: { user: user, pass: key } })
+    gateMsg(level, '正在核对管理密钥…');
+    C74.api('/api/gate-login', { method: 'POST', body: { user: user, key: key } })
       .then(function (res) {
         var u = res.user || {};
         if (acceptLevels.indexOf(u.level) < 0) {
@@ -363,7 +363,7 @@
         grant(level, u);
       })
       .catch(function (e) {
-        if (e && (e.status === 401 || e.status === 403)) { failGate(level, '账号或密钥不正确'); return; }
+        if (e && (e.status === 401 || e.status === 403)) { failGate(level, e.message || '账号或管理密钥不正确'); return; }
         /* 网络问题 → 退回本地密钥，保证离线也能进 */
         localFallback();
       });
