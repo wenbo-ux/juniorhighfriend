@@ -1017,7 +1017,10 @@
     var lv = LV_FULL[u.level] || '班级成员';
     var html =
       '<div class="m-row" style="border:0;padding-top:0">' +
-        '<span class="av hi">' + esc(initial(u.name || u.user || '?')) + '</span>' +
+        '<button class="av-edit" id="acAvBtn" aria-label="更换头像">' +
+          (u.avatar ? '<img src="' + u.avatar + '" alt="">' : esc(initial(u.name || u.user || '?'))) +
+          '<i>换</i>' +
+        '</button>' +
         '<span class="mi"><b>' + esc(u.name || u.user) + '</b><span>' + esc(u.user) + ' · ' + lv + '</span></span>' +
       '</div>' +
       '<div class="m-field"><label>昵称 <span>NAME</span></label>' +
@@ -1035,6 +1038,41 @@
       '<p class="m-note">改密码后，其它设备上的登录会失效，需要重新登录。改昵称只影响以后显示的内容。</p>';
 
     openSheet('我的账户', 'ACCOUNT', html);
+
+    /* 头像更换 */
+    var avPicker = null;
+    var avBtn = $('#acAvBtn');
+    if (avBtn) avBtn.addEventListener('click', function () {
+      if (!avPicker) {
+        avPicker = document.createElement('input');
+        avPicker.type = 'file';
+        avPicker.accept = 'image/*';
+        avPicker.style.display = 'none';
+        document.body.appendChild(avPicker);
+        avPicker.addEventListener('change', function () {
+          var f = (avPicker.files || [])[0];
+          if (!f) return;
+          var fr = new FileReader();
+          fr.onload = function () {
+            makeAvatar(fr.result).then(function (img) {
+              C74.api('/api/account/avatar', { method: 'POST', body: { image: img } })
+                .then(function (res) {
+                  var meNow = C74.me() || {};
+                  meNow.avatar = res.avatar;
+                  C74.setAuth(C74.token(), meNow);
+                  if (avBtn) avBtn.innerHTML = '<img src="' + res.avatar + '" alt=""><i>换</i>';
+                  toast('头像已更新');
+                  C74.refreshBoot();
+                }).catch(function (e2) { toast(e2.message || '上传失败'); });
+            });
+          };
+          fr.onerror = function () { toast('读取图片失败'); };
+          fr.readAsDataURL(f);
+        });
+      }
+      avPicker.value = '';
+      avPicker.click();
+    });
 
     var acBtn = $('#acCodes');
     if (acBtn) acBtn.addEventListener('click', function () { openCodes(); });
@@ -1079,6 +1117,26 @@
   }
 
   /* ---------------- 注册码管理（高管） ---------------- */
+  /* 头像压缩到 200px 方形，JPEG */
+  function makeAvatar(url) {
+    return new Promise(function (res) {
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight;
+        var s = Math.min(w, h);
+        var cv = document.createElement('canvas');
+        cv.width = 200; cv.height = 200;
+        var cx = cv.getContext('2d');
+        cx.drawImage(img, (w - s) / 2, (h - s) / 2, s, s, 0, 0, 200, 200);
+        var out = null;
+        try { out = cv.toDataURL('image/jpeg', 0.82); } catch (e) {}
+        res(out || url);
+      };
+      img.onerror = function () { res(url); };
+      img.src = url;
+    });
+  }
+
   function openCodes() {
     C74.api('/api/codes').then(renderCodes).catch(function (e) {
       toast(e.message || '加载失败');

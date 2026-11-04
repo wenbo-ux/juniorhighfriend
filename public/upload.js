@@ -47,6 +47,11 @@
   };
 
   /* ---------------- 卡片 ---------------- */
+  function avHTML(p) {
+    var url = p.who_avatar || ((window.C74Avatars || {})[p.who_id] || '');
+    if (url) return '<span class="av av-img"><img src="' + url + '" alt=""></span>';
+    return '<span class="av">' + esc(C74.initial(p.who)) + '</span>';
+  }
   /* 有管理数据时以它为准（管理端可能隐藏/置顶过） */
   function inspectCard(card) {
     var id = card.getAttribute('data-post');
@@ -60,8 +65,8 @@
   }
 
   function cardHTML(p) {
-    var head = '<div class="who"><span class="av">' + esc(C74.initial(p.who)) + '</span>' +
-      esc(p.who) + '<span class="up-time">' + esc(p.at || '') + '</span></div>';
+    var head = '<div class="who">' + avHTML(p) + esc(p.who) +
+      '<span class="up-time">' + esc(p.at || '') + '</span></div>';
     var bar = '<div class="bar">' +
       '<button class="act like">' + ICON.like + '<span class="n">0</span></button>' +
       '<button class="act star">' + ICON.star + '<span class="n">0</span></button>' +
@@ -380,6 +385,7 @@
       var p = res.post;
       p.mine = true;
       p.no = local.no;
+      try { p.who_avatar = (C74.me() || {}).avatar || ''; } catch (e) {}
       if (data) { data.posts.unshift(p); C74.save(data); }
       afterInsert(p, p.type === 'photo' ? '照片已发到班级空间' : '已发布');
     }).catch(function (err) {
@@ -455,6 +461,11 @@
         p.mine = !!(meNow && meNow.id === p.who_id);
         insertCard(p);
       });
+
+      /* 头像映射 */
+      var map = {};
+      (d.accounts || []).forEach(function (a) { if (a.avatar) map[a.id] = a.avatar; });
+      window.C74Avatars = map;
 
       /* 封面统计跟随服务器 */
       var accs = d.accounts || [];
