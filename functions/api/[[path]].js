@@ -331,17 +331,19 @@ async function listNotices(req, env, cors) {
 
 async function bootstrap(req, env, cors) {
   const u = await auth(req, env);
-  const [p, n, m] = await Promise.all([
+  const [p, n, m, a] = await Promise.all([
     env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
     env.DB.prepare('SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all(),
-    env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all()
+    env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all(),
+    env.DB.prepare('SELECT id,user,name,level FROM accounts ORDER BY name').all()
   ]);
   return json({
     ok: true,
     user: u ? { id: u.id, user: u.user, name: u.name, level: u.level } : null,
     posts: (p.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
     notices: (n.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
-    members: m.results || []
+    members: m.results || [],
+    accounts: u ? (a.results || []) : []
   }, 200, cors);
 }
 
