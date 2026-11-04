@@ -32,6 +32,7 @@ async function handle(req, env) {
 
       if (path === '/api/setup' && req.method === 'POST') return await setup(req, env, cors);
       if (path === '/api/login' && req.method === 'POST') return await login(req, env, cors);
+      if (path === '/api/gate-login' && req.method === 'POST') return await gateLogin(req, env, cors);
       if (path === '/api/logout' && req.method === 'POST') return await logout(req, env, cors);
       if (path === '/api/me') return await me(req, env, cors);
       if (path === '/api/members') return await members(req, env, cors);
@@ -172,12 +173,28 @@ async function setup(req, env, cors) {
   let accN = 0, memN = 0;
 
   for (const a of accounts) {
+    /* 只设置管理密钥（不动登录密码） */
+    if (a.user && a.gate && !a.pass) {
+      const target = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(a.user).first();
+      if (target) {
+        const gh = await makePass(String(a.gate));
+        await env.DB.prepare('UPDATE accounts SET gate_key = ? WHERE id = ?').bind(gh, target.id).run();
+        accN++;
+      }
+      continue;
+    }
     if (!a.user || !a.pass || !a.level) continue;
     const hash = await makePass(String(a.pass));
     const exist = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(a.user).first();
     if (exist) {
-      await env.DB.prepare('UPDATE accounts SET name=?, level=?, pass=? WHERE id=?')
-        .bind(a.name || a.user, a.level, hash, exist.id).run();
+      if (a.gate) {
+        const gh = await makePass(String(a.gate));
+        await env.DB.prepare('UPDATE accounts SET name=?, level=?, pass=?, gate_key=? WHERE id=?')
+          .bind(a.name || a.user, a.level, hash, gh, exist.id).run();
+      } else {
+        await env.DB.prepare('UPDATE accounts SET name=?, level=?, pass=? WHERE id=?')
+          .bind(a.name || a.user, a.level, hash, exist.id).run();
+      }
     } else {
       await env.DB.prepare('INSERT INTO accounts (id,user,name,level,pass,created_at) VALUES (?,?,?,?,?,?)')
         .bind(uid('a_'), a.user, a.name || a.user, a.level, hash, nowISO()).run();
@@ -216,6 +233,31 @@ async function login(req, env, cors) {
   await env.DB.prepare('INSERT INTO sessions (token,account_id,created_at,expires_at) VALUES (?,?,?,?)')
     .bind(token, acc.id, nowISO(), exp).run();
   await env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(nowISO()).run();
+
+  return json({
+    ok: true, token, expires_at: exp,
+    user: { id: acc.id, user: acc.user, name: acc.name, level: acc.level }
+  }, 200, cors);
+}
+
+async function gateLogin(req, env, cors) {
+  const b = await req.json().catch(() => ({}));
+  const user = String(b.user || '').trim();
+  const key = String(b.key || '').trim();
+  if (!user || key.length < 4) return json({ error: '用户名或管理密钥不完整' }, 400, cors);
+
+  let acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
+  if (!acc) acc = await env.DB.prepare('SELECT * FROM accounts WHERE name = ?').bind(user).first();
+  if (!acc || acc.deleted) return json({ error: '账号不存在' }, 401, cors);
+
+  const target = acc.gate_key || acc.pass;
+  if (!(await checkPass(key, target))) return json({ error: '管理密钥不对' }, 401, cors);
+  if (['junior', 'mid', 'high'].indexOf(acc.level) < 0) return json({ error: '这个账号没有管理权限' }, 403, cors);
+
+  const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
+  const exp = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+  await env.DB.prepare('INSERT INTO sessions (token,account_id,created_at,expires_at) VALUES (?,?,?,?)')
+    .bind(token, acc.id, nowISO(), exp).run();
 
   return json({
     ok: true, token, expires_at: exp,
