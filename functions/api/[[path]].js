@@ -175,7 +175,9 @@ async function login(req, env, cors) {
   const pass = String(body.pass || '');
   if (!user || !pass) return json({ error: '账号密码都要填' }, 400, cors);
 
-  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ? OR name = ?').bind(user, user).first();
+  /* 先按登录名精确匹配，再退到昵称，避免重名歧义 */
+  let acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
+  if (!acc) acc = await env.DB.prepare('SELECT * FROM accounts WHERE name = ?').bind(user).first();
   if (!acc || !(await checkPass(pass, acc.pass))) return json({ error: '账号或密码不对' }, 401, cors);
 
   const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
@@ -481,7 +483,10 @@ async function register(req, env, cors) {
   if (row.used) return json({ error: '这个注册码已经被用过了' }, 409, cors);
 
   const exist = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(user).first();
-  if (exist) return json({ error: '这个昵称已被使用' }, 409, cors);
+  if (exist) return json({ error: '这个学号已经注册过了' }, 409, cors);
+  const dispName = String(b.name || user).slice(0, 20);
+  const dupName = await env.DB.prepare('SELECT id FROM accounts WHERE name = ?').bind(dispName).first();
+  if (dupName) return json({ error: '这个昵称已经被用了，换一个' }, 409, cors);
 
   const hash = await makePass(pass);
   const id = uid('a_');
