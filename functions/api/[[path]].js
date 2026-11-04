@@ -46,6 +46,7 @@ async function handle(req, env) {
       if (path === '/api/register' && req.method === 'POST') return await register(req, env, cors);
       if (path === '/api/code/check' && req.method === 'POST') return await checkCode(req, env, cors);
       if (path === '/api/account/update' && req.method === 'POST') return await updateAccount(req, env, cors);
+      if (path === '/api/account/avatar' && req.method === 'POST') return await saveAvatar(req, env, cors);
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
@@ -463,11 +464,15 @@ async function listNotices(req, env, cors) {
 async function bootstrap(req, env, cors) {
   const u = await auth(req, env);
   const [p, n, m, a] = await Promise.all([
-    env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
-    env.DB.prepare(`SELECT n.*, (SELECT COUNT(*) FROM notice_reads r WHERE r.notice_id = n.id) AS reads
-                      FROM notices n ORDER BY n.pinned DESC, n.created_at DESC LIMIT 50`).all(),
+    env.DB.prepare(`SELECT p.*, a.avatar AS who_avatar FROM posts p
+                      LEFT JOIN accounts a ON a.id = p.who_id
+                     WHERE p.hidden = 0 ORDER BY p.created_at DESC LIMIT 100`).all(),
+    env.DB.prepare(`SELECT n.*, a.avatar AS author_avatar,
+                      (SELECT COUNT(*) FROM notice_reads r WHERE r.notice_id = n.id) AS reads
+                      FROM notices n LEFT JOIN accounts a ON a.id = n.author_id
+                     ORDER BY n.pinned DESC, n.created_at DESC LIMIT 50`).all(),
     env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all(),
-    env.DB.prepare('SELECT id,user,name,level,muted,banned FROM accounts WHERE deleted = 0 ORDER BY name').all()
+    env.DB.prepare('SELECT id,user,name,level,muted,banned,avatar FROM accounts WHERE deleted = 0 ORDER BY name').all()
   ]);
   return json({
     ok: true,
@@ -598,6 +603,17 @@ async function updateAccount(req, env, cors) {
     name: name || acc.name,
     level: acc.level
   } }, 200, cors);
+}
+
+async function saveAvatar(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const b = await req.json().catch(() => ({}));
+  const img = String(b.image || '');
+  if (!img.startsWith('data:image/')) return json({ error: '图片格式不对' }, 400, cors);
+  if (img.length > 400000) return json({ error: '头像太大，换一张小点的' }, 413, cors);
+  await env.DB.prepare('UPDATE accounts SET avatar = ? WHERE id = ?').bind(img, u.id).run();
+  return json({ ok: true, avatar: img }, 200, cors);
 }
 
 async function findCode(env, code) {
