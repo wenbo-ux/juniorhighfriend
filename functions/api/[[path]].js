@@ -46,12 +46,22 @@ async function handle(req, env) {
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
-      const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset|admin)$/);
+      const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset|admin|restore)$/);
       if (am && req.method === 'POST') return await adminAccount(req, env, cors, am[1], am[2]);
-      if (am && req.method === 'DELETE') return await adminAccount(req, env, cors, am[1], 'delete');
+
+      const dmAcc = path.match(/^\/api\/accounts\/([\w-]+)$/);
+      if (dmAcc && req.method === 'DELETE') return await adminAccount(req, env, cors, dmAcc[1], 'delete');
 
       const dm = path.match(/^\/api\/posts\/([\w-]+)$/);
       if (dm && req.method === 'DELETE') return await deletePost(req, env, cors, dm[1]);
+
+      const prs = path.match(/^\/api\/posts\/([\w-]+)\/restore$/);
+      if (prs && req.method === 'POST') return await restorePost(req, env, cors, prs[1]);
+
+      if (path === '/api/codes' && req.method === 'GET') return await listCodes(req, env, cors);
+      if (path === '/api/codes' && req.method === 'POST') return await createCodes(req, env, cors);
+      const cd = path.match(/^\/api\/codes\/([A-Z0-9]+)$/);
+      if (cd && req.method === 'DELETE') return await dropCode(req, env, cors, cd[1]);
 
       const m = path.match(/^\/api\/reports\/([\w-]+)\/review$/);
       if (m && req.method === 'POST') return await reviewReport(req, env, cors, m[1]);
@@ -180,6 +190,7 @@ async function login(req, env, cors) {
   let acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
   if (!acc) acc = await env.DB.prepare('SELECT * FROM accounts WHERE name = ?').bind(user).first();
   if (!acc || !(await checkPass(pass, acc.pass))) return json({ error: '账号或密码不对' }, 401, cors);
+  if (acc.deleted) return json({ error: '账号不存在' }, 401, cors);
   if (acc.banned) return json({ error: '这个账号已被封禁，联系管理员' }, 403, cors);
 
   const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
@@ -342,7 +353,7 @@ async function bootstrap(req, env, cors) {
     env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
     env.DB.prepare('SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all(),
     env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all(),
-    env.DB.prepare('SELECT id,user,name,level,muted,banned FROM accounts ORDER BY name').all()
+    env.DB.prepare('SELECT id,user,name,level,muted,banned FROM accounts WHERE deleted = 0 ORDER BY name').all()
   ]);
   return json({
     ok: true,
@@ -543,14 +554,23 @@ async function adminAccount(req, env, cors, id, action) {
     return json({ ok: true }, 200, cors);
   }
 
-  /* 删除账户 */
+  /* 删除账户（软删除，可撤销） */
   if (action === 'delete') {
     if (self) return deny('不能删除自己');
     if (targetHigh) return deny('不能删除其他高管');
     if (!need(u, 'mid') && acc.level !== 'member') return deny('普通管理只能移除普通成员');
-    await env.DB.prepare('DELETE FROM accounts WHERE id = ?').bind(id).run();
+    await env.DB.prepare('UPDATE accounts SET deleted = 1 WHERE id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
     await logIt('删除账户：' + (acc.name || acc.user));
+    return json({ ok: true, undo: { type: 'account.delete', id: id } }, 200, cors);
+  }
+
+  /* 撤销删除 */
+  if (action === 'restore') {
+    if (!need(u, 'junior')) return deny('没有管理权限');
+    if (targetHigh && !self) return deny('不能处置其他高管');
+    await env.DB.prepare('UPDATE accounts SET deleted = 0 WHERE id = ?').bind(id).run();
+    await logIt('恢复账户：' + (acc.name || acc.user));
     return json({ ok: true }, 200, cors);
   }
 
@@ -585,6 +605,90 @@ async function adminAccount(req, env, cors, id, action) {
   }
 
   return json({ error: '未知操作' }, 400, cors);
+}
+
+async function restorePost(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'junior')) return json({ error: '没有管理权限' }, 403, cors);
+  await env.DB.prepare('UPDATE posts SET hidden = 0 WHERE id = ?').bind(id).run();
+  return json({ ok: true }, 200, cors);
+}
+
+/* ---------------- 注册码管理 ---------------- */
+async function listCodes(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'high')) return json({ error: '只有高管能管理注册码' }, 403, cors);
+
+  const { results } = await env.DB.prepare(
+    'SELECT code,used,used_by,used_at,created_at,note,batch FROM codes ORDER BY used ASC, created_at DESC'
+  ).all();
+
+  const rows = results || [];
+  const groups = {};
+  rows.forEach(r => {
+    const k = r.batch || '未分组';
+    groups[k] = groups[k] || { batch: k, total: 0, used: 0 };
+    groups[k].total++;
+    if (r.used) groups[k].used++;
+  });
+
+  return json({
+    ok: true,
+    codes: rows,
+    groups: Object.keys(groups).map(k => groups[k]),
+    total: rows.length,
+    used: rows.filter(r => r.used).length
+  }, 200, cors);
+}
+
+function genCode(n) {
+  const A = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let out = '';
+  const buf = crypto.getRandomValues(new Uint8Array(n));
+  for (let i = 0; i < n; i++) out += A[buf[i] % A.length];
+  return out;
+}
+
+async function createCodes(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'high')) return json({ error: '只有高管能生成注册码' }, 403, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const count = Math.max(1, Math.min(50, parseInt(b.count, 10) || 1));
+  const batch = String(b.batch || '未分组').slice(0, 20);
+  const note = String(b.note || '班级成员').slice(0, 20);
+  const len = Math.max(8, Math.min(16, parseInt(b.length, 10) || 10));
+  const iso = nowISO();
+
+  const created = [];
+  for (let i = 0; i < count; i++) {
+    let code = genCode(len), tries = 0;
+    while (tries++ < 5) {
+      const dup = await env.DB.prepare('SELECT code FROM codes WHERE code = ?').bind(code).first();
+      if (!dup) break;
+      code = genCode(len);
+    }
+    await env.DB.prepare(
+      'INSERT INTO codes (code,used,created_at,note,batch) VALUES (?,0,?,?,?)'
+    ).bind(code, iso, note, batch).run();
+    created.push(code);
+  }
+  return json({ ok: true, created, batch }, 200, cors);
+}
+
+async function dropCode(req, env, cors, code) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'high')) return json({ error: '只有高管能删除注册码' }, 403, cors);
+
+  const row = await env.DB.prepare('SELECT * FROM codes WHERE code = ?').bind(code).first();
+  if (!row) return json({ error: '注册码不存在' }, 404, cors);
+  if (row.used) return json({ error: '已经用过的码不能删除' }, 409, cors);
+  await env.DB.prepare('DELETE FROM codes WHERE code = ?').bind(code).run();
+  return json({ ok: true }, 200, cors);
 }
 
 /* ---------------- 日志 ---------------- */

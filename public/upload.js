@@ -401,7 +401,9 @@
     if (card) card.remove();
     toast('已删除');
     if (window.C74 && C74.online && C74.online()) {
-      C74.api('/api/posts/' + encodeURIComponent(id), { method: 'DELETE' }).catch(function () {});
+      C74.api('/api/posts/' + encodeURIComponent(id), { method: 'DELETE' }).then(function () {
+        if (window.C74Undo) window.C74Undo.set({ type: 'post.delete', id: id });
+      }).catch(function () {});
     }
   });
 

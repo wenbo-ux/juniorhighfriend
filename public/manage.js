@@ -418,7 +418,9 @@
     mBody.querySelectorAll('[data-alv]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var lv = btn.getAttribute('data-alv');
+        var prevLv = a.level;
         call('level', { level: lv }).then(function () {
+          setUndo({ type: 'acc.level', id: a.id, prev: prevLv });
           a.level = lv;
           toast('已设为' + levelBadge(lv).t);
           C74.refreshBoot && C74.refreshBoot();
@@ -451,17 +453,18 @@
           if (!confirm('确定删除「' + (a.name || a.user) + '」的账户？该账号将无法再登录。')) return;
           C74.api('/api/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })
             .then(function () {
-              toast('账户已删除');
+              setUndo({ type: 'acc.delete', id: a.id });
+              toast('账户已删除，可点左上角撤销');
               C74.refreshBoot && C74.refreshBoot();
               closeSheet(); openMembers();
             }).catch(function (e) { toast(e.message || '失败'); });
           return;
         }
         call('admin', { action: act }).then(function (r) {
-          if (act === 'mute') a.muted = 1;
-          if (act === 'unmute') a.muted = 0;
-          if (act === 'ban') a.banned = 1;
-          if (act === 'unban') a.banned = 0;
+          if (act === 'mute') { a.muted = 1; setUndo({ type: 'acc.mute', id: a.id, prev: 0 }); }
+          if (act === 'unmute') { a.muted = 0; setUndo({ type: 'acc.mute', id: a.id, prev: 1 }); }
+          if (act === 'ban') { a.banned = 1; setUndo({ type: 'acc.ban', id: a.id, prev: 0 }); }
+          if (act === 'unban') { a.banned = 0; setUndo({ type: 'acc.ban', id: a.id, prev: 1 }); }
           toast({ mute: '已禁言', unmute: '已解除禁言', ban: '已封禁', unban: '已解除封禁' }[act] || '已完成');
           C74.refreshBoot && C74.refreshBoot();
           closeSheet(); openMembers();
@@ -884,6 +887,66 @@
     if (e.key === 'Enter') blockIfMuted(e);
   }, true);
 
+  /* ---------------- 撤销最近一次管理操作 ---------------- */
+  var UNDO_KEY = 'c74_undo_v1';
+
+  function setUndo(rec) {
+    try { sessionStorage.setItem(UNDO_KEY, JSON.stringify(rec)); } catch (e) {}
+    paintUndo();
+  }
+  function getUndo() {
+    try { return JSON.parse(sessionStorage.getItem(UNDO_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function clearUndo() {
+    try { sessionStorage.removeItem(UNDO_KEY); } catch (e) {}
+    paintUndo();
+  }
+  function undoLabel(r) {
+    if (!r) return '';
+    var map = {
+      'acc.delete': '删除账户',
+      'acc.mute': '禁言',
+      'acc.ban': '封禁',
+      'acc.level': '改权限',
+      'post.delete': '删除动态',
+      'notice.delete': '删除公告'
+    };
+    return '撤销：' + (map[r.type] || '操作');
+  }
+  function paintUndo() {
+    var btn = document.getElementById('undoBtn');
+    var txt = document.getElementById('undoTxt');
+    if (!btn || !txt) return;
+    var r = getUndo();
+    if (level === 'none' || !r) { btn.hidden = true; return; }
+    btn.hidden = false;
+    txt.textContent = undoLabel(r);
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('#undoBtn');
+    if (!btn) return;
+    var r = getUndo();
+    if (!r) { paintUndo(); return; }
+    var id = encodeURIComponent(r.id);
+    var p;
+    if (r.type === 'acc.delete') p = C74.api('/api/accounts/' + id + '/restore', { method: 'POST', body: {} });
+    else if (r.type === 'acc.mute') p = C74.api('/api/accounts/' + id + '/admin', { method: 'POST', body: { action: r.prev ? 'unmute' : 'mute' } });
+    else if (r.type === 'acc.ban') p = C74.api('/api/accounts/' + id + '/admin', { method: 'POST', body: { action: r.prev ? 'unban' : 'ban' } });
+    else if (r.type === 'acc.level') p = C74.api('/api/accounts/' + id + '/level', { method: 'POST', body: { level: r.prev } });
+    else if (r.type === 'post.delete') p = C74.api('/api/posts/' + id + '/restore', { method: 'POST', body: {} });
+    else p = Promise.reject(new Error('这个操作不支持撤销'));
+
+    p.then(function () {
+      toast('已撤销');
+      clearUndo();
+      C74.refreshBoot && C74.refreshBoot();
+      setTimeout(function () { location.reload(); }, 500);
+    }).catch(function (err) {
+      toast(err.message || '撤销失败');
+    });
+  });
+
   /* ---------------- 我的账户（改昵称 / 改密码） ---------------- */
   var LV_FULL = { high: '高级管理', mid: '中级管理', junior: '普通管理', teacher: '老师', member: '班级成员' };
 
@@ -903,9 +966,16 @@
       '<div class="m-field"><label>新密码 <span>NEW · 不改留空</span></label>' +
         '<input class="m-inp" id="acNew" type="password" autocomplete="new-password" placeholder="至少 4 位"></div>' +
       '<div class="m-act-row"><button class="m-btn solid" id="acSave">保 存 修 改</button></div>' +
+      (u.level === 'high'
+        ? '<div class="m-sec"><div class="m-sec-h">管理员</div><div class="m-act-row">' +
+          '<button class="m-btn" id="acCodes">注册码管理</button></div></div>'
+        : '') +
       '<p class="m-note">改密码后，其它设备上的登录会失效，需要重新登录。改昵称只影响以后显示的内容。</p>';
 
     openSheet('我的账户', 'ACCOUNT', html);
+
+    var acBtn = $('#acCodes');
+    if (acBtn) acBtn.addEventListener('click', function () { openCodes(); });
 
     $('#acSave').addEventListener('click', function () {
       var name = ($('#acName').value || '').trim();
@@ -941,6 +1011,71 @@
     });
   }
 
+  /* ---------------- 注册码管理（高管） ---------------- */
+  function openCodes() {
+    C74.api('/api/codes').then(renderCodes).catch(function (e) {
+      toast(e.message || '加载失败');
+    });
+  }
+
+  function renderCodes(d) {
+    var groups = (d.groups || []).map(function (g) {
+      return '<span class="cd-chip">' + esc(g.batch || '未分组') + ' <b>' + g.used + '/' + g.total + '</b></span>';
+    }).join('');
+
+    var rows = (d.codes || []).map(function (c) {
+      return '<div class="cd-row">' +
+        '<span class="cd-code' + (c.used ? ' used' : '') + '">' + esc(c.code) + '</span>' +
+        '<span class="cd-tag ' + (c.used ? 'no' : 'ok') + '">' + (c.used ? '已用' : '可用') + '</span>' +
+        '<span class="cd-tag" style="color:#7c8ba6;background:none;border:1px solid rgba(120,185,255,.14)">' + esc(c.batch || '未分组') + '</span>' +
+        (c.used ? '' : '<button class="cd-del" data-cdel="' + esc(c.code) + '" aria-label="删除">×</button>') +
+        '</div>';
+    }).join('') || '<p class="m-note">还没有注册码</p>';
+
+    var html =
+      '<div class="m-sec"><div class="m-sec-h">概况</div>' +
+        '<p class="m-note" style="margin-top:0">共 ' + d.total + ' 个 · 已用 ' + d.used +
+        ' · 可用 ' + (d.total - d.used) + '</p>' +
+        '<div class="cd-group">' + groups + '</div></div>' +
+
+      '<div class="m-sec"><div class="m-sec-h">生成新码</div>' +
+        '<div class="m-act-row">' +
+          '<div class="inp" style="flex:0 0 96px"><input id="cgCount" type="number" min="1" max="50" value="10"></div>' +
+          '<div class="inp" style="flex:1;margin-left:6px"><input id="cgBatch" maxlength="20" placeholder="分组名，如 B 批"></div>' +
+        '</div>' +
+        '<div class="m-act-row"><button class="m-btn solid" id="cgMake">生 成</button></div>' +
+        '<p class="m-note">生成后自动分到该组；同组的码在列表里会挨着显示。</p></div>' +
+
+      '<div class="m-sec"><div class="m-sec-h">全部注册码</div>' + rows + '</div>';
+
+    openSheet('注册码管理', 'HIGH · INVITE CODES', html);
+
+    $('#cgMake') && $('#cgMake').addEventListener('click', function () {
+      var n = parseInt($('#cgCount').value, 10) || 10;
+      var batch = ($('#cgBatch').value || '').trim() || '未分组';
+      this.disabled = true; this.textContent = '生 成 中…';
+      C74.api('/api/codes', { method: 'POST', body: { count: n, batch: batch } })
+        .then(function (res) {
+          toast('已生成 ' + res.created.length + ' 个');
+          openCodes();
+        }).catch(function (err) {
+          toast(err.message || '生成失败');
+          openCodes();
+        });
+    });
+
+    $$('[data-cdel]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var code = b.getAttribute('data-cdel');
+        if (!confirm('删除注册码 ' + code + '？')) return;
+        C74.api('/api/codes/' + encodeURIComponent(code), { method: 'DELETE' })
+          .then(function () { toast('已删除'); openCodes(); })
+          .catch(function (e) { toast(e.message || '删除失败'); });
+      });
+    });
+  }
+
+  window.C74Undo = { set: setUndo, clear: clearUndo };
   window.C74Account = { open: openAccount };
 
   /* ---------------- 申请入口 ---------------- */
@@ -956,6 +1091,8 @@
   }
 
   /* ---------------- 启动 ---------------- */
+  paintUndo();
+
   var mb = document.getElementById('membersBtn');
   if (mb) mb.addEventListener('click', openMembers);
 
