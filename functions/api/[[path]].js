@@ -58,6 +58,8 @@ async function handle(req, env) {
       const prs = path.match(/^\/api\/posts\/([\w-]+)\/restore$/);
       if (prs && req.method === 'POST') return await restorePost(req, env, cors, prs[1]);
 
+      if (path === '/api/lock' && req.method === 'POST') return await setLock(req, env, cors);
+
       if (path === '/api/codes' && req.method === 'GET') return await listCodes(req, env, cors);
       if (path === '/api/codes' && req.method === 'POST') return await createCodes(req, env, cors);
       const cd = path.match(/^\/api\/codes\/([A-Z0-9]+)$/);
@@ -327,6 +329,36 @@ async function deletePost(req, env, cors, id) {
   return json({ ok: true }, 200, cors);
 }
 
+/* ---------------- 发布锁定 ---------------- */
+async function getLock(env) {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'lock'").first();
+    if (!row || !row.value) return { locked: false };
+    const v = JSON.parse(row.value);
+    return { locked: !!v.locked, by: v.by || '', at: v.at || '' };
+  } catch (e) {
+    return { locked: false };
+  }
+}
+
+async function setLock(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '只有中管及以上能锁定班级' }, 403, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const locked = !!b.locked;
+  const val = JSON.stringify({ locked, by: u.name || u.user, at: nowISO() });
+  await env.DB.prepare(
+    "INSERT INTO settings (key,value,updated_at) VALUES ('lock',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+  ).bind(val, nowISO()).run();
+
+  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+    .bind(uid('l_'), nowISO(), u.name || u.user, u.level, locked ? '锁定班级发布' : '解除锁定').run();
+
+  return json({ ok: true, locked, by: u.name || u.user }, 200, cors);
+}
+
 /* ---------------- 动态 / 公告 ---------------- */
 function parseImages(v) {
   if (!v) return [];
@@ -357,6 +389,7 @@ async function bootstrap(req, env, cors) {
   ]);
   return json({
     ok: true,
+    lock: await getLock(env),
     user: u ? { id: u.id, user: u.user, name: u.name, level: u.level } : null,
     posts: (p.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
     notices: (n.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
@@ -369,6 +402,10 @@ async function createPost(req, env, cors) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
   if (u.muted) return json({ error: '你已被禁言，暂时不能发动态' }, 403, cors);
+  const lock = await getLock(env);
+  if (lock.locked && !need(u, 'mid')) {
+    return json({ error: '班级已锁定' + (lock.by ? '（' + lock.by + '）' : '') + '，暂时只有中管及以上能发布' }, 403, cors);
+  }
 
   const b = await req.json().catch(() => ({}));
   const text = String(b.text || '').trim();
