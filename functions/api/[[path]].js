@@ -40,6 +40,8 @@ async function handle(req, env) {
       if (path === '/api/posts' && req.method === 'GET') return await listPosts(req, env, cors);
       if (path === '/api/posts' && req.method === 'POST') return await createPost(req, env, cors);
       if (path === '/api/notices' && req.method === 'GET') return await listNotices(req, env, cors);
+      const nrd = path.match(/^\/api\/notices\/([\w-]+)\/read$/);
+      if (nrd && req.method === 'POST') return await readNotice(req, env, cors, nrd[1]);
       if (path === '/api/notices' && req.method === 'POST') return await createNotice(req, env, cors);
       if (path === '/api/register' && req.method === 'POST') return await register(req, env, cors);
       if (path === '/api/code/check' && req.method === 'POST') return await checkCode(req, env, cors);
@@ -442,7 +444,8 @@ async function listPosts(req, env, cors) {
 
 async function listNotices(req, env, cors) {
   const { results } = await env.DB.prepare(
-    'SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all();
+    `SELECT n.*, (SELECT COUNT(*) FROM notice_reads r WHERE r.notice_id = n.id) AS reads
+       FROM notices n ORDER BY n.pinned DESC, n.created_at DESC LIMIT 50`).all();
   const notices = (results || []).map(n => Object.assign({}, n, { images: parseImages(n.images) }));
   return json({ ok: true, notices }, 200, cors);
 }
@@ -451,7 +454,8 @@ async function bootstrap(req, env, cors) {
   const u = await auth(req, env);
   const [p, n, m, a] = await Promise.all([
     env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
-    env.DB.prepare('SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all(),
+    env.DB.prepare(`SELECT n.*, (SELECT COUNT(*) FROM notice_reads r WHERE r.notice_id = n.id) AS reads
+                      FROM notices n ORDER BY n.pinned DESC, n.created_at DESC LIMIT 50`).all(),
     env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all(),
     env.DB.prepare('SELECT id,user,name,level,muted,banned FROM accounts WHERE deleted = 0 ORDER BY name').all()
   ]);
@@ -462,7 +466,8 @@ async function bootstrap(req, env, cors) {
     posts: (p.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
     notices: (n.results || []).map(x => Object.assign({}, x, { images: parseImages(x.images) })),
     members: m.results || [],
-    accounts: u ? (a.results || []) : []
+    accounts: u ? (a.results || []) : [],
+    accountTotal: (a.results || []).length
   }, 200, cors);
 }
 
@@ -499,6 +504,16 @@ async function createPost(req, env, cors) {
   const post = { id, who: u.name || u.user, who_id: u.id, type, text, images, date, at, pinned: 0, hidden: 0,
                  created_at: new Date().toISOString() };
   return json({ ok: true, post }, 200, cors);
+}
+
+async function readNotice(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  await env.DB.prepare(
+    'INSERT INTO notice_reads (notice_id, account_id, at) VALUES (?,?,?) ON CONFLICT(notice_id, account_id) DO NOTHING'
+  ).bind(id, u.id, nowISO()).run();
+  const row = await env.DB.prepare('SELECT COUNT(*) AS c FROM notice_reads WHERE notice_id = ?').bind(id).first();
+  return json({ ok: true, reads: row ? row.c : 0 }, 200, cors);
 }
 
 async function createNotice(req, env, cors) {
