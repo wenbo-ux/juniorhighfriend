@@ -203,11 +203,30 @@
   }
 
   /* ---------------- 站内信弹窗 ---------------- */
-  function checkInbox() {
+  var lastInboxSig = '';
+
+  function paintDot(n) {
+    var tab = document.querySelector('.tab[data-tab="我的"]');
+    if (!tab) return;
+    var dot = tab.querySelector('.tab-dot');
+    if (!n) { if (dot) dot.remove(); return; }
+    if (!dot) {
+      dot = document.createElement('i');
+      dot.className = 'tab-dot';
+      tab.appendChild(dot);
+    }
+    dot.textContent = n > 9 ? '9+' : String(n);
+  }
+
+  function checkInbox(force) {
     if (!online()) return;
     api('/api/inbox').then(function (d) {
       var unread = (d.inbox || []).filter(function (x) { return !x.read; });
+      paintDot(unread.length);
       if (!unread.length) return;
+      var sig = unread.map(function (x) { return x.id; }).join(',');
+      if (!force && sig === lastInboxSig) return;
+      lastInboxSig = sig;
       showInbox(unread);
     }).catch(function () {});
   }
@@ -232,6 +251,8 @@
       Promise.all(ps).then(function () {
         C74Sheet.close();
         toast('已读');
+        lastInboxSig = '';
+        checkInbox(true);
       });
     });
   }
@@ -242,5 +263,13 @@
 
   window.C74Report = { openForm: openForm, openReview: openReview, checkInbox: checkInbox };
 
-  setTimeout(checkInbox, 1500);
+  setTimeout(function () { checkInbox(); }, 1500);
+  setInterval(function () { checkInbox(); }, 60000);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') checkInbox();
+  });
+  document.addEventListener('click', function (e) {
+    var tab = e.target.closest && e.target.closest('.tab[data-tab="我的"]');
+    if (tab) setTimeout(function () { checkInbox(true); }, 300);
+  });
 })();

@@ -9,3 +9,8 @@
 .rp-th img{width:100%;height:100%;object-fit:cover;display:block}
 .rp-th b{position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;background:rgba(4,8,16,.85);
   color:#dcecff;font:11px/17px sans-serif;text-align:center;border:1px solid rgba(150,215,255,.3)}
+
+/* 未读红点 */
+.tab-dot{position:absolute;top:-1px;right:calc(50% - 20px);min-width:15px;height:15px;padding:0 4px;
+  border-radius:8px;background:#ff4d6d;color:#fff;font:9px/15px -apple-system,sans-serif;
+  text-align:center;box-shadow:0 0 10px rgba(255,77,109,.6)}
