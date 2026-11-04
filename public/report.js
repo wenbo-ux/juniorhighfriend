@@ -50,8 +50,7 @@
         '<div class="m-act-row"><button class="m-btn" id="rpPick" type="button">选择图片</button>' +
         '<span class="m-note" id="rpCount" style="margin:0;align-self:center">未选择</span></div>' +
         '<div class="rp-thumbs" id="rpThumbs"></div></div>' +
-      '<div class="m-act-row"><button class="m-btn solid" id="rpSend">提 交 举 报</button></div>' +
-      '<p class="m-note">提交后会进入双人终审：温泊、李允正 两位高管都通过后才会转给郭老师处理。提交人自己不能审。</p>';
+      '<div class="m-act-row"><button class="m-btn solid" id="rpSend">提 交 举 报</button></div>';
 
     C74Sheet.open('举报', 'REPORT · 双人终审', html);
 
