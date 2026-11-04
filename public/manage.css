@@ -125,3 +125,13 @@
   font-size:16px;outline:none;-webkit-appearance:none;appearance:none}
 .m-inp:focus{border-color:rgba(95,227,255,.45)}
 .m-inp::placeholder{color:#4e6483;font-size:14px}
+
+/* 成员头衔 */
+.m-row .mi b{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lv{font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.06em;padding:3px 6px;
+  border-radius:5px;border:1px solid;white-space:nowrap;font-weight:600}
+.lv-high{color:#ffd24a;border-color:rgba(255,210,74,.45);background:rgba(255,210,74,.12)}
+.lv-mid{color:#5fe3ff;border-color:rgba(95,227,255,.45);background:rgba(95,227,255,.12)}
+.lv-junior{color:#8ef0b8;border-color:rgba(142,240,184,.4);background:rgba(142,240,184,.1)}
+.lv-teacher{color:#c9b8ff;border-color:rgba(201,184,255,.4);background:rgba(201,184,255,.1)}
+.lv-member{color:#8194b2;border-color:rgba(129,148,178,.35);background:rgba(129,148,178,.1)}

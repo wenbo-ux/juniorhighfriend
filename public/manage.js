@@ -29,6 +29,20 @@
   } else if (me && me.role === 'junior') {
     level = 'junior';
   }
+  /* 账号等级自动授权（登录时已写 admin_session，这里再兜底一次） */
+  (function () {
+    var acc = null;
+    try { acc = (window.C74 && C74.me) ? C74.me() : null; } catch (e) {}
+    if (level === 'none' && acc && acc.level && acc.level !== 'member') {
+      level = acc.level;
+      try {
+        sessionStorage.setItem('c74_admin_session', JSON.stringify({
+          level: acc.level, user: acc.name || acc.user, accountId: acc.id, at: Date.now()
+        }));
+      } catch (e) {}
+    }
+  })();
+
   var LV_NAME = { junior: '普通管理', mid: '中级管理', high: '高级管理' };
   var LV_SHORT = { junior: '普管', mid: '中管', high: '高管' };
   var rank = { none: 0, junior: 1, mid: 2, high: 3 };
@@ -282,24 +296,126 @@
     return { t: '成员', c: '' };
   }
 
-  function openMembers() {
-    var html = data.members.map(function (m) {
-      var r = roleLabel(m);
-      return '<button class="m-row" data-mid="' + esc(m.id) + '">' +
-        '<span class="av ' + r.c + '">' + esc(initial(m.name)) + '</span>' +
-        '<span class="mi"><b>' + esc(m.name) + '</b><span>' + esc(m.id) + '</span></span>' +
-        '<span class="m-tag ' + r.c + '">' + r.t + '</span>' +
-        (m.muted ? '<span class="m-tag mute">禁言</span>' : '') +
-        (m.banned ? '<span class="m-tag mute">封禁</span>' : '') +
-        '</button>';
-    }).join('') || '<div class="m-empty">暂无成员</div>';
+  var accountList = [];
 
-    openSheet('成员名单', data.members.length + ' 人 · 点击查看', html);
+  function levelBadge(lv) {
+    if (lv === 'high') return { t: '高管', c: 'lv-high' };
+    if (lv === 'mid') return { t: '中管', c: 'lv-mid' };
+    if (lv === 'junior') return { t: '普管', c: 'lv-junior' };
+    if (lv === 'teacher') return { t: '老师', c: 'lv-teacher' };
+    return { t: '普通成员', c: 'lv-member' };
+  }
+
+  function memberRows() {
+    var seen = {};
+    var rows = [];
+    accountList.forEach(function (a) {
+      seen[a.user] = 1; seen[a.id] = 1;
+      rows.push({
+        id: a.id, accountId: a.id, user: a.user,
+        name: a.name || a.user, level: a.level, account: true
+      });
+    });
+    (data.members || []).forEach(function (m) {
+      if (seen[m.id] || seen[m.name]) return;
+      rows.push({
+        id: m.id, name: m.name,
+        level: m.role === 'teacher' ? 'teacher' : 'member',
+        muted: m.muted, banned: m.banned, roster: true
+      });
+    });
+    return rows;
+  }
+
+  function openMembers() {
+    var draw = function () {
+      var rows = memberRows();
+      if (!rows.length) {
+        openSheet('成员名单', '0 人', '<div class="m-empty">暂无成员，等大家用注册码加入</div>');
+        return;
+      }
+      var html = rows.map(function (r) {
+        var b = levelBadge(r.level);
+        return '<button class="m-row" data-mid="' + esc(r.id) + '">' +
+          '<span class="av">' + esc(initial(r.name)) + '</span>' +
+          '<span class="mi"><b>' + esc(r.name) +
+            '<span class="lv ' + b.c + '">' + b.t + '</span></b>' +
+            '<span>' + esc(r.user || r.id) + '</span></span>' +
+          (r.muted ? '<span class="m-tag mute">禁言</span>' : '') +
+          (r.banned ? '<span class="m-tag mute">封禁</span>' : '') +
+          '</button>';
+      }).join('');
+      openSheet('成员名单', rows.length + ' 人 · 点击查看', html);
+    };
+
+    if (window.C74 && C74.online && C74.online()) {
+      C74.boot().then(function (d) {
+        accountList = d.accounts || [];
+        draw();
+      }).catch(draw);
+    } else {
+      draw();
+    }
+  }
+
+  /* 账户详情（改等级 / 重置密码） */
+  function openAccountAdmin(id) {
+    var a = accountList.filter(function (x) { return x.id === id; })[0];
+    if (!a) return;
+    var b = levelBadge(a.level);
+    var self = (C74.me && C74.me() || {}).id === a.id;
+    var html = '<div class="m-row" style="border:0;padding-top:0">' +
+      '<span class="av">' + esc(initial(a.name || a.user)) + '</span>' +
+      '<span class="mi"><b>' + esc(a.name || a.user) +
+      '<span class="lv ' + b.c + '">' + b.t + '</span></b>' +
+      '<span>' + esc(a.user) + '</span></span></div>';
+
+    if (level === 'high' && !self) {
+      html += '<div class="m-sec"><div class="m-sec-h">授予权限</div><div class="m-act-row">' +
+        '<button class="m-btn" data-alv="junior">普通管理</button>' +
+        '<button class="m-btn" data-alv="mid">中级管理</button>' +
+        '<button class="m-btn solid" data-alv="high">高级管理</button></div>' +
+        '<div class="m-act-row" style="margin-top:8px">' +
+        '<button class="m-btn" data-alv="member">降为普通成员</button></div></div>' +
+        '<div class="m-sec"><div class="m-sec-h">重置密码</div>' +
+        '<div class="m-field"><div class="inp"><input id="arPass" placeholder="新密码，至少 4 位"></div></div>' +
+        '<div class="m-act-row"><button class="m-btn danger" data-arst="1">重置并踢下线</button></div></div>';
+    } else if (self) {
+      html += '<p class="m-note">这是你自己的账号，改密码在底部「我的」里操作。</p>';
+    } else {
+      html += '<p class="m-note">只有高管可以调整权限或重置密码。</p>';
+    }
+
+    openSheet(a.name || a.user, a.user + ' · ' + b.t, html);
+
+    mBody.querySelectorAll('[data-alv]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var lv = btn.getAttribute('data-alv');
+        C74.api('/api/accounts/' + encodeURIComponent(a.id) + '/level', { method: 'POST', body: { level: lv } })
+          .then(function () {
+            a.level = lv;
+            toast('已设为' + levelBadge(lv).t);
+            C74.refreshBoot && C74.refreshBoot();
+            closeSheet(); openMembers();
+          }).catch(function (e) { toast(e.message || '操作失败'); });
+      });
+    });
+    var rs = mBody.querySelector('[data-arst]');
+    if (rs) rs.addEventListener('click', function () {
+      var p = ($('#arPass').value || '').trim();
+      if (p.length < 4) { toast('至少 4 位'); return; }
+      C74.api('/api/accounts/' + encodeURIComponent(a.id) + '/reset', { method: 'POST', body: { pass: p } })
+        .then(function () { toast('密码已重置'); closeSheet(); })
+        .catch(function (e) { toast(e.message || '失败'); });
+    });
   }
 
   $('#mBody') && $('#mBody').addEventListener('click', function (e) {
     var row = e.target.closest('[data-mid]');
-    if (row) openMember(row.dataset.mid);
+    if (!row) return;
+    var id = row.getAttribute('data-mid');
+    if (accountList.some(function (x) { return x.id === id; })) { openAccountAdmin(id); return; }
+    openMember(id);
   });
 
   function openMember(id) {
