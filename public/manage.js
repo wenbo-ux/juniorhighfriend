@@ -352,25 +352,14 @@
   }
 
   function memberRows() {
-    var seen = {};
-    var rows = [];
-    accountList.forEach(function (a) {
-      seen[a.user] = 1; seen[a.id] = 1;
-      rows.push({
+    /* 只认服务器上的账号，不再掺本地名册 */
+    return accountList.map(function (a) {
+      return {
         id: a.id, accountId: a.id, user: a.user,
         name: a.name || a.user, level: a.level, account: true,
         muted: a.muted, banned: a.banned
-      });
+      };
     });
-    (data.members || []).forEach(function (m) {
-      if (seen[m.id] || seen[m.name]) return;
-      rows.push({
-        id: m.id, name: m.name,
-        level: m.role === 'teacher' ? 'teacher' : 'member',
-        muted: m.muted, banned: m.banned, roster: true
-      });
-    });
-    return rows;
   }
 
   function openMembers() {

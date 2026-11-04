@@ -413,8 +413,8 @@
   if (textBtn) textBtn.addEventListener('click', function () { open('text'); });
   if (photoBtn) photoBtn.addEventListener('click', function () { open('photo'); });
 
-  /* ---------------- 刷新后还原已发的动态 ---------------- */
-  if (data && Array.isArray(data.posts)) {
+  /* ---------------- 刷新后还原已发的动态（仅离线） ---------------- */
+  if (data && Array.isArray(data.posts) && !(window.C74 && C74.online && C74.online())) {
     var have = {};
     document.querySelectorAll('.card[data-post]').forEach(function (c) {
       have[c.getAttribute('data-post')] = 1;
@@ -447,17 +447,22 @@
           };
         }));
       }
-      /* 动态：把服务器上有、本地没渲染过的补上 */
-      var have = {};
-      document.querySelectorAll('.card[data-post]').forEach(function (c) {
-        have[c.getAttribute('data-post')] = 1;
-      });
+      /* 动态：以服务器为准，先清空再重绘 */
+      document.querySelectorAll('.card[data-post]').forEach(function (c) { c.remove(); });
       var meNow = (C74.me && C74.me()) || null;
       (d.posts || []).slice().reverse().forEach(function (p) {
-        if (have[p.id]) return;
         p.mine = !!(meNow && meNow.id === p.who_id);
         insertCard(p);
       });
+
+      /* 封面统计跟随服务器 */
+      var accs = d.accounts || [];
+      var posts = d.posts || [];
+      var setTxt = function (id, v) { var el = document.getElementById(id); if (el) el.textContent = v; };
+      setTxt('statMembers', accs.length);
+      setTxt('statPosts', posts.length);
+      setTxt('statPins', posts.filter(function (p) { return p.pinned; }).length);
+      setTxt('feedCount', posts.length);
     }).catch(function () {});
   }
   syncServer();
