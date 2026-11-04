@@ -622,7 +622,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
               '</div>'
             : '')+
           (n.urgent?'<span class="n-warn">重 要 ！ ！ ！</span>':'')+'</div>'+
-          '<div class="n-foot"><span class="ok">已读 38 / 42</span>'+
+          '<div class="n-foot"><span class="ok">已读 '+(n.reads||0)+' / '+(window.C74NoticeTotal||0)+'</span>'+
           '<span>· '+(n.pinned?'置顶':'公告')+'</span></div></article>';
       }).join('');
     }
@@ -743,8 +743,8 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   };
 })();
 </script>
-<script src="manage.js?v=14"></script>
-<script src="upload.js?v=13"></script>
+<script src="manage.js?v=15"></script>
+<script src="upload.js?v=14"></script>
 <script src="report.js?v=2"></script>
 </body>
 </html>

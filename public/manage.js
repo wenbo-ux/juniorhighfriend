@@ -198,17 +198,33 @@
             }).join('') + '</div>'
           : '') +
         (n.urgent ? '<span class="n-warn">重 要 ！ ！ ！</span>' : '') + acts + '</div>' +
-        '<div class="n-foot"><span class="ok">已读 38 / 42</span><span>· ' + (n.pinned ? '置顶' : '公告') + '</span></div>' +
+        '<div class="n-foot"><span class="ok">已读 ' + (n.reads || 0) + ' / ' + (window.C74NoticeTotal || 0) +
+        '</span><span>· ' + (n.pinned ? '置顶' : '公告') + '</span></div>' +
         '</article>';
     }).join('');
   }
 
   /* 供在线同步层写入服务器公告 */
+  function markNoticesRead(list) {
+    if (!(window.C74 && C74.online && C74.online())) return;
+    list.slice(0, 3).forEach(function (n) {
+      var key = 'nr_' + n.id;
+      try { if (sessionStorage.getItem(key)) return; } catch (e) {}
+      C74.api('/api/notices/' + encodeURIComponent(n.id) + '/read', { method: 'POST', body: {} })
+        .then(function (res) {
+          try { sessionStorage.setItem(key, '1'); } catch (e) {}
+          n.reads = res.reads;
+          renderNotices();
+        }).catch(function () {});
+    });
+  }
+
   window.C74Notices = {
     set: function (list) {
       if (!Array.isArray(list)) return;
       data.notices = list.slice();
       renderNotices();
+      markNoticesRead(data.notices);
     }
   };
 

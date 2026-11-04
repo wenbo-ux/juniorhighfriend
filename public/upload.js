@@ -439,11 +439,12 @@
     C74.boot().then(function (d) {
       /* 公告：交给 manage.js 渲染，这样管理按钮还在 */
       if (window.C74Notices && Array.isArray(d.notices)) {
+        window.C74NoticeTotal = d.accountTotal || (d.accounts || []).length;
         window.C74Notices.set(d.notices.map(function (n) {
           return {
             id: n.id, text: n.text, author: n.author,
             urgent: !!n.urgent, pinned: !!n.pinned,
-            images: n.images || [], at: (n.at || '').slice(0, 16)
+            images: n.images || [], at: (n.at || '').slice(0, 16), reads: n.reads || 0
           };
         }));
       }
