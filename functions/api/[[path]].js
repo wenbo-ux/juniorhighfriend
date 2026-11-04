@@ -58,6 +58,15 @@ async function handle(req, env) {
       const prs = path.match(/^\/api\/posts\/([\w-]+)\/restore$/);
       if (prs && req.method === 'POST') return await restorePost(req, env, cors, prs[1]);
 
+      const ppin = path.match(/^\/api\/posts\/([\w-]+)\/pin$/);
+      if (ppin && req.method === 'POST') return await pinPost(req, env, cors, ppin[1]);
+
+      const npin = path.match(/^\/api\/notices\/([\w-]+)\/pin$/);
+      if (npin && req.method === 'POST') return await pinNotice(req, env, cors, npin[1]);
+
+      const ndel = path.match(/^\/api\/notices\/([\w-]+)$/);
+      if (ndel && req.method === 'DELETE') return await deleteNotice(req, env, cors, ndel[1]);
+
       if (path === '/api/lock' && req.method === 'POST') return await setLock(req, env, cors);
 
       if (path === '/api/codes' && req.method === 'GET') return await listCodes(req, env, cors);
@@ -649,6 +658,38 @@ async function restorePost(req, env, cors, id) {
   if (!u) return json({ error: '未登录' }, 401, cors);
   if (!need(u, 'junior')) return json({ error: '没有管理权限' }, 403, cors);
   await env.DB.prepare('UPDATE posts SET hidden = 0 WHERE id = ?').bind(id).run();
+  return json({ ok: true }, 200, cors);
+}
+
+async function pinPost(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '普通管理不能置顶动态' }, 403, cors);
+  const b = await req.json().catch(() => ({}));
+  const on = !!b.pinned;
+  if (on) await env.DB.prepare('UPDATE posts SET pinned = 0').run();
+  await env.DB.prepare('UPDATE posts SET pinned = ? WHERE id = ?').bind(on ? 1 : 0, id).run();
+  return json({ ok: true, pinned: on }, 200, cors);
+}
+
+async function pinNotice(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '普通管理不能置顶公告' }, 403, cors);
+  const b = await req.json().catch(() => ({}));
+  const on = !!b.pinned;
+  if (on) await env.DB.prepare('UPDATE notices SET pinned = 0').run();
+  await env.DB.prepare('UPDATE notices SET pinned = ? WHERE id = ?').bind(on ? 1 : 0, id).run();
+  return json({ ok: true, pinned: on }, 200, cors);
+}
+
+async function deleteNotice(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'junior')) return json({ error: '没有删除公告的权限' }, 403, cors);
+  await env.DB.prepare('DELETE FROM notices WHERE id = ?').bind(id).run();
+  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+    .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '删除公告 ' + id).run();
   return json({ ok: true }, 200, cors);
 }
 
