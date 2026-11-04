@@ -121,7 +121,7 @@ async function auth(req, env) {
   const token = h.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
   const row = await env.DB.prepare(
-    `SELECT s.token, s.expires_at, a.id, a.user, a.name, a.level
+    `SELECT s.token, s.expires_at, a.id, a.user, a.name, a.level, a.muted, a.banned
        FROM sessions s JOIN accounts a ON a.id = s.account_id
       WHERE s.token = ?`
   ).bind(token).first();
@@ -357,6 +357,7 @@ async function bootstrap(req, env, cors) {
 async function createPost(req, env, cors) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
+  if (u.muted) return json({ error: '你已被禁言，暂时不能发动态' }, 403, cors);
 
   const b = await req.json().catch(() => ({}));
   const text = String(b.text || '').trim();

@@ -313,7 +313,8 @@
       seen[a.user] = 1; seen[a.id] = 1;
       rows.push({
         id: a.id, accountId: a.id, user: a.user,
-        name: a.name || a.user, level: a.level, account: true
+        name: a.name || a.user, level: a.level, account: true,
+        muted: a.muted, banned: a.banned
       });
     });
     (data.members || []).forEach(function (m) {
@@ -358,55 +359,114 @@
     }
   }
 
-  /* 账户详情（改等级 / 重置密码） */
+  /* 账户详情：资料 / 禁言 / 封禁 / 删除 / 权限 / 重置密码 */
   function openAccountAdmin(id) {
     var a = accountList.filter(function (x) { return x.id === id; })[0];
     if (!a) return;
     var b = levelBadge(a.level);
-    var self = (C74.me && C74.me() || {}).id === a.id;
+    var self = ((C74.me && C74.me()) || {}).id === a.id;
+    var isHigh = a.level === 'high';
+
     var html = '<div class="m-row" style="border:0;padding-top:0">' +
       '<span class="av">' + esc(initial(a.name || a.user)) + '</span>' +
       '<span class="mi"><b>' + esc(a.name || a.user) +
       '<span class="lv ' + b.c + '">' + b.t + '</span></b>' +
-      '<span>' + esc(a.user) + '</span></span></div>';
+      '<span>' + esc(a.user) + (a.muted ? ' · 已禁言' : '') + (a.banned ? ' · 已封禁' : '') + '</span></span></div>';
 
-    if (level === 'high' && !self) {
+    if (self) {
+      html += '<p class="m-note">这是你自己的账号。改昵称/密码在底部「我的」里操作。</p>';
+      openSheet(a.name || a.user, a.user + ' · ' + b.t, html);
+      return;
+    }
+    if (isHigh) {
+      html += '<p class="m-note">高管账号之间不能互相调整，避免误操作把根权限改掉。</p>';
+      openSheet(a.name || a.user, a.user + ' · ' + b.t, html);
+      return;
+    }
+
+    var canMid = can('mid'), canHigh = level === 'high';
+
+    if (canMid) {
+      html += '<div class="m-sec"><div class="m-sec-h">资料</div>' +
+        '<div class="m-field"><div class="inp"><input id="acName2" maxlength="16" value="' + esc(a.name || a.user) + '"></div></div>' +
+        '<div class="m-act-row"><button class="m-btn" data-aact="rename">保存昵称</button></div></div>';
+    }
+
+    html += '<div class="m-sec"><div class="m-sec-h">处置</div><div class="m-act-row">' +
+      '<button class="m-btn" data-aact="' + (a.muted ? 'unmute' : 'mute') + '">' + (a.muted ? '解除禁言' : '禁言') + '</button>' +
+      (canHigh ? '<button class="m-btn danger" data-aact="' + (a.banned ? 'unban' : 'ban') + '">' + (a.banned ? '解除封禁' : '封禁') + '</button>' : '') +
+      '<button class="m-btn danger" data-aact="del">删除账户</button></div></div>';
+
+    if (canHigh) {
       html += '<div class="m-sec"><div class="m-sec-h">授予权限</div><div class="m-act-row">' +
         '<button class="m-btn" data-alv="junior">普通管理</button>' +
         '<button class="m-btn" data-alv="mid">中级管理</button>' +
-        '<button class="m-btn solid" data-alv="high">高级管理</button></div>' +
-        '<div class="m-act-row" style="margin-top:8px">' +
-        '<button class="m-btn" data-alv="member">降为普通成员</button></div></div>' +
+        '<button class="m-btn" data-alv="member">普通成员</button></div>' +
+        '<p class="m-note">高管权限只能由本人账号持有，这里不能授予。</p></div>' +
         '<div class="m-sec"><div class="m-sec-h">重置密码</div>' +
         '<div class="m-field"><div class="inp"><input id="arPass" placeholder="新密码，至少 4 位"></div></div>' +
-        '<div class="m-act-row"><button class="m-btn danger" data-arst="1">重置并踢下线</button></div></div>';
-    } else if (self) {
-      html += '<p class="m-note">这是你自己的账号，改密码在底部「我的」里操作。</p>';
-    } else {
-      html += '<p class="m-note">只有高管可以调整权限或重置密码。</p>';
+        '<div class="m-act-row"><button class="m-btn danger" data-aact="reset">重置并踢下线</button></div></div>';
     }
 
     openSheet(a.name || a.user, a.user + ' · ' + b.t, html);
 
+    function call(action, extra) {
+      var body = Object.assign({}, extra || {});
+      return C74.api('/api/accounts/' + encodeURIComponent(a.id) + '/' + action, { method: 'POST', body: body });
+    }
+
     mBody.querySelectorAll('[data-alv]').forEach(function (btn) {
       btn.addEventListener('click', function () {
         var lv = btn.getAttribute('data-alv');
-        C74.api('/api/accounts/' + encodeURIComponent(a.id) + '/level', { method: 'POST', body: { level: lv } })
-          .then(function () {
-            a.level = lv;
-            toast('已设为' + levelBadge(lv).t);
-            C74.refreshBoot && C74.refreshBoot();
-            closeSheet(); openMembers();
-          }).catch(function (e) { toast(e.message || '操作失败'); });
+        call('level', { level: lv }).then(function () {
+          a.level = lv;
+          toast('已设为' + levelBadge(lv).t);
+          C74.refreshBoot && C74.refreshBoot();
+          closeSheet(); openMembers();
+        }).catch(function (e) { toast(e.message || '操作失败'); });
       });
     });
-    var rs = mBody.querySelector('[data-arst]');
-    if (rs) rs.addEventListener('click', function () {
-      var p = ($('#arPass').value || '').trim();
-      if (p.length < 4) { toast('至少 4 位'); return; }
-      C74.api('/api/accounts/' + encodeURIComponent(a.id) + '/reset', { method: 'POST', body: { pass: p } })
-        .then(function () { toast('密码已重置'); closeSheet(); })
-        .catch(function (e) { toast(e.message || '失败'); });
+
+    mBody.querySelectorAll('[data-aact]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var act = btn.getAttribute('data-aact');
+        if (act === 'rename') {
+          var nm = ($('#acName2').value || '').trim();
+          if (nm.length < 2) { toast('名字至少 2 个字'); return; }
+          call('admin', { action: 'rename', name: nm }).then(function () {
+            toast('昵称已改');
+            C74.refreshBoot && C74.refreshBoot();
+            closeSheet(); openMembers();
+          }).catch(function (e) { toast(e.message || '失败'); });
+          return;
+        }
+        if (act === 'reset') {
+          var p = ($('#arPass').value || '').trim();
+          if (p.length < 4) { toast('至少 4 位'); return; }
+          call('reset', { pass: p }).then(function () { toast('密码已重置，对方需重新登录'); closeSheet(); })
+            .catch(function (e) { toast(e.message || '失败'); });
+          return;
+        }
+        if (act === 'del') {
+          if (!confirm('确定删除「' + (a.name || a.user) + '」的账户？该账号将无法再登录。')) return;
+          C74.api('/api/accounts/' + encodeURIComponent(a.id), { method: 'DELETE' })
+            .then(function () {
+              toast('账户已删除');
+              C74.refreshBoot && C74.refreshBoot();
+              closeSheet(); openMembers();
+            }).catch(function (e) { toast(e.message || '失败'); });
+          return;
+        }
+        call('admin', { action: act }).then(function (r) {
+          if (act === 'mute') a.muted = 1;
+          if (act === 'unmute') a.muted = 0;
+          if (act === 'ban') a.banned = 1;
+          if (act === 'unban') a.banned = 0;
+          toast({ mute: '已禁言', unmute: '已解除禁言', ban: '已封禁', unban: '已解除封禁' }[act] || '已完成');
+          C74.refreshBoot && C74.refreshBoot();
+          closeSheet(); openMembers();
+        }).catch(function (e) { toast(e.message || '失败'); });
+      });
     });
   }
 
