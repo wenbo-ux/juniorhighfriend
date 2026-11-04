@@ -103,11 +103,14 @@
     mask.classList.add('on');
     sheet.classList.add('on');
   }
+  var sheetClosedAt = 0;
   function closeSheet() {
     mask.classList.remove('on');
     sheet.classList.remove('on');
     mBody.innerHTML = '';
+    sheetClosedAt = Date.now();   /* 面板刚关闭，短时间内忽略卡片上的点击 */
   }
+  function ghostClick() { return Date.now() - sheetClosedAt < 700; }
   $('#mClose').addEventListener('click', closeSheet);
   mask.addEventListener('click', closeSheet);
 
@@ -212,6 +215,7 @@
   $('#noticeFeed') && $('#noticeFeed').addEventListener('click', function (e) {
     var b = e.target.closest('[data-nact]');
     if (!b) return;
+    if (ghostClick()) return;   /* 防止发布后面板底的点击落到"删除"上 */
     var n = data.notices.filter(function (x) { return x.id === b.dataset.nid; })[0];
     if (!n) return;
     if (b.dataset.nact === 'pin') {
@@ -294,6 +298,7 @@
   document.querySelector('.feed') && document.querySelector('.feed').addEventListener('click', function (e) {
     var b = e.target.closest('[data-pact]');
     if (!b) return;
+    if (ghostClick()) return;
     var card = b.closest('[data-post]');
     if (!card) return;
     var p = data.posts.filter(function (x) { return x.id === card.getAttribute('data-post'); })[0];
@@ -608,12 +613,6 @@
       var text = ($('#mcText').value || '').trim();
       if (text.length < 2) { toast('至少写两个字'); return; }
       var pinned = $('#mcPin').getAttribute('aria-pressed') === 'true';
-      if (pinned) data.notices.forEach(function (o) { o.pinned = false; });
-      data.notices.unshift({
-        id: C74.uid('n_'), text: text, author: session.name || '管理员',
-        urgent: $('#mcUrgent').getAttribute('aria-pressed') === 'true',
-        pinned: pinned, at: C74.stamp()
-      });
       var payload = {
         text: text, urgent: $('#mcUrgent').getAttribute('aria-pressed') === 'true', pinned: pinned
       };
@@ -624,9 +623,21 @@
             id: n.id || C74.uid('n_'), text: text, author: session.name || '管理员',
             urgent: !!payload.urgent, pinned: pinned, images: [], at: C74.stamp()
           });
+          if (pinned) data.notices.forEach(function (o) { o.pinned = false; });
           log('发布公告：' + text.slice(0, 16));
           renderNotices(); closeSheet(); toast('公告已发布');
           if (C74.refreshBoot) C74.refreshBoot();
+          /* 以服务器为准刷新一次 */
+          C74.refreshBoot().then(function (fresh) {
+            if (window.C74Notices && fresh && Array.isArray(fresh.notices)) {
+              window.C74Notices.set(fresh.notices.map(function (x) {
+                return {
+                  id: x.id, text: x.text, author: x.author, urgent: !!x.urgent,
+                  pinned: !!x.pinned, images: x.images || [], at: (x.at || '').slice(0, 16)
+                };
+              }));
+            }
+          }).catch(function () {});
         }).catch(function (err) {
           toast('发布失败：' + (err.message || '网络异常'));
         });
