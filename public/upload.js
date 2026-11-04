@@ -293,7 +293,7 @@
 
   /* ---------------- 打开 / 关闭 ---------------- */
   function open(mode) {
-    if (locked() && !isAdmin()) { toast('已锁定：仅管理员可发布'); return; }
+    if (locked() && !isAdmin()) { toast('班级已锁定，只有中管及以上能发布'); return; }
     state.mode = mode;
     state.images = [];
     $('#upKicker').textContent = mode === 'photo' ? 'PHOTO' : 'TEXT';

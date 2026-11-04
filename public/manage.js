@@ -1075,6 +1075,46 @@
     });
   }
 
+  /* ---------------- 发布锁定（中管及以上） ---------------- */
+  (function initLock() {
+    var btn = document.getElementById('lockBtn');
+    var label = document.getElementById('lockLabel');
+    if (!btn) return;
+
+    function paint(locked) {
+      btn.classList.toggle('on', !!locked);
+      if (label) label.textContent = locked ? '已锁定' : '锁定';
+      btn.title = locked ? '班级已锁定，只有中管及以上能发布' : '锁定发布';
+    }
+
+    if (window.C74 && C74.online && C74.online()) {
+      C74.boot().then(function (d) {
+        if (d && d.lock) paint(d.lock.locked);
+      }).catch(function () {});
+    }
+
+    btn.addEventListener('click', function () {
+      if (!(window.C74 && C74.online && C74.online())) {
+        paint(!btn.classList.contains('on'));
+        toast('离线模式：锁定只在当前设备生效');
+        return;
+      }
+      var want = !btn.classList.contains('on');
+      btn.disabled = true;
+      C74.api('/api/lock', { method: 'POST', body: { locked: want } })
+        .then(function (r) {
+          btn.disabled = false;
+          paint(r.locked);
+          toast(r.locked ? '已锁定：只有中管及以上能发布' : '已解除锁定');
+          C74.refreshBoot && C74.refreshBoot();
+        })
+        .catch(function (e) {
+          btn.disabled = false;
+          toast(e.message || '操作失败');
+        });
+    });
+  })();
+
   window.C74Undo = { set: setUndo, clear: clearUndo };
   window.C74Account = { open: openAccount };
 

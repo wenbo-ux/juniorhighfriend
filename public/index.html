@@ -732,15 +732,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     n.textContent = on ? base + 1 : base;
   });
 
-  /* 锁定 */
-  var lock = document.getElementById('lockBtn'), label = document.getElementById('lockLabel');
-  if(lock){
-    lock.addEventListener('click', function(){
-      var on = lock.classList.toggle('on');
-      label.textContent = on ? '已锁定' : '锁定';
-      toast(on ? '已锁定：仅管理员可发布' : '已解除锁定');
-    });
-  }
+  /* 锁定：状态在服务器，逻辑见 manage.js */
 
   /* 顶栏 */
   document.getElementById('search')?.addEventListener('click', function(){ toast('搜索：还没做'); });
@@ -943,7 +935,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
   };
 })();
 </script>
-<script src="manage.js?v=10"></script>
-<script src="upload.js?v=10"></script>
+<script src="manage.js?v=11"></script>
+<script src="upload.js?v=11"></script>
 </body>
 </html>
