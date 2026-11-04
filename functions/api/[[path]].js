@@ -46,8 +46,9 @@ async function handle(req, env) {
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
-      const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset)$/);
+      const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset|admin)$/);
       if (am && req.method === 'POST') return await adminAccount(req, env, cors, am[1], am[2]);
+      if (am && req.method === 'DELETE') return await adminAccount(req, env, cors, am[1], 'delete');
 
       const dm = path.match(/^\/api\/posts\/([\w-]+)$/);
       if (dm && req.method === 'DELETE') return await deletePost(req, env, cors, dm[1]);
@@ -179,6 +180,7 @@ async function login(req, env, cors) {
   let acc = await env.DB.prepare('SELECT * FROM accounts WHERE user = ?').bind(user).first();
   if (!acc) acc = await env.DB.prepare('SELECT * FROM accounts WHERE name = ?').bind(user).first();
   if (!acc || !(await checkPass(pass, acc.pass))) return json({ error: '账号或密码不对' }, 401, cors);
+  if (acc.banned) return json({ error: '这个账号已被封禁，联系管理员' }, 403, cors);
 
   const token = uid('t_') + hex(crypto.getRandomValues(new Uint8Array(12)));
   const exp = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString(); // 14 天
@@ -340,7 +342,7 @@ async function bootstrap(req, env, cors) {
     env.DB.prepare('SELECT * FROM posts WHERE hidden = 0 ORDER BY created_at DESC LIMIT 100').all(),
     env.DB.prepare('SELECT * FROM notices ORDER BY pinned DESC, created_at DESC LIMIT 50').all(),
     env.DB.prepare('SELECT id,name,role,owner,muted,banned FROM members ORDER BY id').all(),
-    env.DB.prepare('SELECT id,user,name,level FROM accounts ORDER BY name').all()
+    env.DB.prepare('SELECT id,user,name,level,muted,banned FROM accounts ORDER BY name').all()
   ]);
   return json({
     ok: true,
@@ -500,29 +502,88 @@ async function register(req, env, cors) {
 async function adminAccount(req, env, cors, id, action) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
-  if (!need(u, 'high')) return json({ error: '只有高管能改账户等级或重置密码' }, 403, cors);
+  if (!need(u, 'junior')) return json({ error: '没有管理权限' }, 403, cors);
 
   const acc = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
   if (!acc) return json({ error: '账户不存在' }, 404, cors);
 
-  const b = await req.json().catch(() => ({}));
+  const self = acc.id === u.id;
+  const targetHigh = acc.level === 'high';
+  const b = req.method === 'DELETE' ? {} : await req.json().catch(() => ({}));
 
+  function deny(msg) { return json({ error: msg }, 403, cors); }
+  function logIt(text) {
+    return env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+      .bind(uid('l_'), nowISO(), u.name || u.user, u.level, text).run();
+  }
+
+  /* 等级调整：只有高管可以，且不能碰其他高管 */
   if (action === 'level') {
+    if (!need(u, 'high')) return deny('只有高管能调整权限');
+    if (self) return deny('不能改自己的等级');
+    if (targetHigh) return deny('不能调整其他高管的权限');
     const lv = String(b.level || '');
-    if (['member', 'junior', 'mid', 'high'].indexOf(lv) < 0) return json({ error: '等级不对' }, 400, cors);
-    if (acc.id === u.id && lv !== acc.level) return json({ error: '不能改自己的等级' }, 400, cors);
+    if (['member', 'junior', 'mid'].indexOf(lv) < 0) return deny('只能设为普通成员 / 普通管理 / 中级管理');
     await env.DB.prepare('UPDATE accounts SET level = ? WHERE id = ?').bind(lv, id).run();
-    await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
-      .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '调整等级：' + (acc.name || acc.user) + ' → ' + lv).run();
+    await logIt('调整等级：' + (acc.name || acc.user) + ' → ' + lv);
     return json({ ok: true, level: lv }, 200, cors);
   }
 
-  const pass = String(b.pass || '');
-  if (pass.length < 4) return json({ error: '密码至少 4 位' }, 400, cors);
-  const hash = await makePass(pass);
-  await env.DB.prepare('UPDATE accounts SET pass = ? WHERE id = ?').bind(hash, id).run();
-  await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
-  return json({ ok: true }, 200, cors);
+  /* 重置密码：只有高管 */
+  if (action === 'reset') {
+    if (!need(u, 'high')) return deny('只有高管能重置密码');
+    if (targetHigh && !self) return deny('不能重置其他高管的密码');
+    const pass = String(b.pass || '');
+    if (pass.length < 4) return json({ error: '密码至少 4 位' }, 400, cors);
+    const hash = await makePass(pass);
+    await env.DB.prepare('UPDATE accounts SET pass = ? WHERE id = ?').bind(hash, id).run();
+    await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
+    await logIt('重置密码：' + (acc.name || acc.user));
+    return json({ ok: true }, 200, cors);
+  }
+
+  /* 删除账户 */
+  if (action === 'delete') {
+    if (self) return deny('不能删除自己');
+    if (targetHigh) return deny('不能删除其他高管');
+    if (!need(u, 'mid') && acc.level !== 'member') return deny('普通管理只能移除普通成员');
+    await env.DB.prepare('DELETE FROM accounts WHERE id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
+    await logIt('删除账户：' + (acc.name || acc.user));
+    return json({ ok: true }, 200, cors);
+  }
+
+  /* 禁言 / 封禁 / 改名 */
+  if (action === 'admin') {
+    if (!need(u, 'junior')) return deny('没有管理权限');
+    if (targetHigh && !self) return deny('不能处置其他高管');
+    const act = String(b.action || '');
+    if (act === 'rename') {
+      if (!need(u, 'mid')) return deny('普通管理不能改资料');
+      const name = String(b.name || '').trim();
+      if (name.length < 2 || name.length > 16) return json({ error: '名字需要 2–16 个字' }, 400, cors);
+      const dup = await env.DB.prepare('SELECT id FROM accounts WHERE name = ? AND id <> ?').bind(name, id).first();
+      if (dup) return json({ error: '这个名字已经被用了' }, 409, cors);
+      await env.DB.prepare('UPDATE accounts SET name = ? WHERE id = ?').bind(name, id).run();
+      await logIt('改昵称：' + (acc.name || acc.user) + ' → ' + name);
+      return json({ ok: true, name }, 200, cors);
+    }
+    if (act === 'mute' || act === 'unmute') {
+      await env.DB.prepare('UPDATE accounts SET muted = ? WHERE id = ?').bind(act === 'mute' ? 1 : 0, id).run();
+      await logIt((act === 'mute' ? '禁言：' : '解除禁言：') + (acc.name || acc.user));
+      return json({ ok: true, muted: act === 'mute' ? 1 : 0 }, 200, cors);
+    }
+    if (act === 'ban' || act === 'unban') {
+      if (!need(u, 'high')) return deny('只有高管能封禁');
+      await env.DB.prepare('UPDATE accounts SET banned = ? WHERE id = ?').bind(act === 'ban' ? 1 : 0, id).run();
+      if (act === 'ban') await env.DB.prepare('DELETE FROM sessions WHERE account_id = ?').bind(id).run();
+      await logIt((act === 'ban' ? '封禁：' : '解封：') + (acc.name || acc.user));
+      return json({ ok: true, banned: act === 'ban' ? 1 : 0 }, 200, cors);
+    }
+    return json({ error: '未知操作' }, 400, cors);
+  }
+
+  return json({ error: '未知操作' }, 400, cors);
 }
 
 /* ---------------- 日志 ---------------- */
