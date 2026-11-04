@@ -352,6 +352,16 @@ async function createReport(req, env, cors) {
   await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
     .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '提交举报：' + (body.target_name || body.target_id || '')).run();
 
+  /* 通知所有高管：有新举报待审 */
+  const highs = await env.DB.prepare(
+    "SELECT id FROM accounts WHERE level = 'high' AND deleted = 0 AND id <> ?"
+  ).bind(u.id).all();
+  for (const h of (highs.results || [])) {
+    await pushInbox(env, h.id, 'report', id, '有新举报待审',
+      (u.name || u.user) + ' 举报：' + (body.target_name || body.target_id || '') +
+      '\n理由：' + reason, []);
+  }
+
   return json({ ok: true, id }, 200, cors);
 }
 
@@ -896,6 +906,16 @@ async function approveReport(req, env, cors, id) {
 
   await env.DB.prepare('UPDATE reports SET approvals=? WHERE id=?')
     .bind(JSON.stringify(approvals), id).run();
+
+  const others = await env.DB.prepare(
+    "SELECT id FROM accounts WHERE level = 'high' AND deleted = 0 AND id <> ?"
+  ).bind(u.id).all();
+  for (const o of (others.results || [])) {
+    await pushInbox(env, o.id, 'report', id, '有一条举报等你终审',
+      (u.name || u.user) + ' 已通过：' + (r.target_name || r.target_id) +
+      '\n还需要你再确认一次。', []);
+  }
+
   return json({ ok: true, status: 'pending', approvals: approvals.length, required: need2 }, 200, cors);
 }
 
