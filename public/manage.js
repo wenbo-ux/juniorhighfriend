@@ -24,7 +24,7 @@
   }
   var me = findMember();
   var level = 'none';
-  if (adminSession && (adminSession.level === 'mid' || adminSession.level === 'high')) {
+  if (adminSession && (adminSession.level === 'junior' || adminSession.level === 'mid' || adminSession.level === 'high')) {
     level = adminSession.level;
   } else if (me && me.role === 'junior') {
     level = 'junior';
