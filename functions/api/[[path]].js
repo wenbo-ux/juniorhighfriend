@@ -42,6 +42,7 @@ async function handle(req, env) {
       if (path === '/api/notices' && req.method === 'POST') return await createNotice(req, env, cors);
       if (path === '/api/register' && req.method === 'POST') return await register(req, env, cors);
       if (path === '/api/code/check' && req.method === 'POST') return await checkCode(req, env, cors);
+      if (path === '/api/account/update' && req.method === 'POST') return await updateAccount(req, env, cors);
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
@@ -399,6 +400,53 @@ async function createNotice(req, env, cors) {
 
   return json({ ok: true, notice: { id, text, author: u.name || u.user, urgent: b.urgent ? 1 : 0,
     pinned: pinned ? 1 : 0, images } }, 200, cors);
+}
+
+async function updateAccount(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const oldPass = String(b.oldPass || '');
+  if (!oldPass) return json({ error: '请输入原密码' }, 400, cors);
+
+  const acc = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(u.id).first();
+  if (!acc) return json({ error: '账户不存在' }, 404, cors);
+  if (!(await checkPass(oldPass, acc.pass))) return json({ error: '原密码不对' }, 403, cors);
+
+  const name = String(b.name || '').trim();
+  const newPass = String(b.newPass || '');
+
+  if (!name && !newPass) return json({ error: '没有要改的内容' }, 400, cors);
+
+  if (name) {
+    if (name.length < 2 || name.length > 16) return json({ error: '名字需要 2–16 个字' }, 400, cors);
+    if (name !== acc.name) {
+      const dup = await env.DB.prepare('SELECT id FROM accounts WHERE name = ? AND id <> ?').bind(name, acc.id).first();
+      if (dup) return json({ error: '这个名字已经被用了' }, 409, cors);
+    }
+  }
+  if (newPass && newPass.length < 4) return json({ error: '新密码至少 4 位' }, 400, cors);
+
+  let hash = null;
+  if (newPass) hash = await makePass(newPass);
+
+  await env.DB.prepare(
+    'UPDATE accounts SET name = ?, pass = ? WHERE id = ?'
+  ).bind(name || acc.name, hash || acc.pass, acc.id).run();
+
+  /* 改密码后让其它会话失效，只保留当前这把 */
+  if (hash) {
+    const h = req.headers.get('Authorization') || '';
+    const keep = h.replace(/^Bearer\s+/i, '').trim();
+    await env.DB.prepare('DELETE FROM sessions WHERE account_id = ? AND token <> ?').bind(acc.id, keep).run();
+  }
+
+  return json({ ok: true, user: {
+    id: acc.id, user: acc.user,
+    name: name || acc.name,
+    level: acc.level
+  } }, 200, cors);
 }
 
 async function findCode(env, code) {
