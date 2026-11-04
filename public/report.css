@@ -1,0 +1,11 @@
+/* 举报面板 */
+.rp-reason{margin:0;font-size:12.5px;line-height:1.72;color:#cfdcef;word-break:break-word}
+.rp-meta{margin-top:6px;font:9.5px/1 ui-monospace,Menlo,monospace;letter-spacing:.08em;color:#5f7397}
+.rp-imgs{display:flex;gap:6px;margin-top:8px}
+.rp-imgs img{width:96px;height:96px;object-fit:cover;border-radius:9px;border:1px solid rgba(120,185,255,.2)}
+.rp-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.rp-thumbs:empty{display:none}
+.rp-th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid rgba(120,185,255,.2)}
+.rp-th img{width:100%;height:100%;object-fit:cover;display:block}
+.rp-th b{position:absolute;right:2px;top:2px;width:17px;height:17px;border-radius:50%;background:rgba(4,8,16,.85);
+  color:#dcecff;font:11px/17px sans-serif;text-align:center;border:1px solid rgba(150,215,255,.3)}
