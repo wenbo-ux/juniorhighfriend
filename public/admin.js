@@ -42,6 +42,8 @@
 
   var state = {
     level: null,          /* low | high */
+    accountLevel: null,   /* high | mid | junior */
+    accountId: null,
     user: '',
     tab: 'members',
     memberQuery: '',
@@ -300,8 +302,34 @@
   bindPad('low');
   bindPad('high');
 
+  function padOf(level) { return $(level === 'low' ? '#keypad' : '#keypadHigh'); }
+
+  function failGate(level, why) {
+    attempts[level]++;
+    gateMsg(level, (why || '用户名或密钥不正确') + '（第 ' + attempts[level] + ' 次）');
+    keyState[level] = '';
+    paintKey(level);
+    if (attempts[level] >= 5) {
+      gateMsg(level, '安全策略：连续失败 5 次，请稍后再试');
+      var pad = padOf(level);
+      if (pad) pad.style.pointerEvents = 'none';
+      setTimeout(function () {
+        attempts[level] = 0;
+        if (pad) pad.style.pointerEvents = '';
+        gateMsg(level, '');
+      }, 8000);
+    }
+  }
+
+  function grant(level, acc) {
+    attempts[level] = 0;
+    state.user = acc.name || acc.user || state.user;
+    state.accountLevel = acc.level || (level === 'high' ? 'high' : 'mid');
+    state.accountId = acc.id || null;
+    runVerify(level, state.user);
+  }
+
   function submitGate(level) {
-    var cfg = data.keys[level === 'high' ? 'high' : 'mid'];
     var input = $(level === 'low' ? '#gateUser' : '#gateUserHigh');
     var user = (input.value || '').trim();
     var key = keyState[level];
@@ -309,27 +337,36 @@
     if (!user) { gateMsg(level, '请先输入用户名'); return; }
     if (key.length < 4) { gateMsg(level, '密钥需要 4 位数字（当前 ' + key.length + '/4）'); return; }
 
-    if (user !== cfg.user || key !== cfg.key) {
-      attempts[level]++;
-      gateMsg(level, '身份核验失败 · 用户名或密钥不正确（第 ' + attempts[level] + ' 次）');
-      keyState[level] = '';
-      paintKey(level);
-      if (attempts[level] >= 5) {
-        gateMsg(level, '安全策略：连续失败 5 次，请稍后再试');
-        var pad = $(level === 'low' ? '#keypad' : '#keypadHigh');
-        if (pad) pad.style.pointerEvents = 'none';
-        setTimeout(function () {
-          attempts[level] = 0;
-          if (pad) pad.style.pointerEvents = '';
-          gateMsg(level, '');
-        }, 8000);
+    var acceptLevels = level === 'high' ? ['high'] : ['junior', 'mid', 'high'];
+
+    function localFallback() {
+      var cfg = data.keys[level === 'high' ? 'high' : 'mid'];
+      if (user === cfg.user && key === cfg.key) {
+        grant(level, { name: user, level: level === 'high' ? 'high' : 'mid' });
+      } else {
+        failGate(level);
       }
-      return;
     }
 
-    attempts[level] = 0;
-    state.user = user;
-    runVerify(level, user);
+    if (!window.C74 || !C74.api) { localFallback(); return; }
+
+    gateMsg(level, '正在核对账号…');
+    C74.api('/api/login', { method: 'POST', body: { user: user, pass: key } })
+      .then(function (res) {
+        var u = res.user || {};
+        if (acceptLevels.indexOf(u.level) < 0) {
+          gateMsg(level, '这个账号没有' + (level === 'high' ? '高管' : '管理') + '权限');
+          keyState[level] = ''; paintKey(level);
+          return;
+        }
+        if (C74.setAuth) C74.setAuth(res.token, u);
+        grant(level, u);
+      })
+      .catch(function (e) {
+        if (e && (e.status === 401 || e.status === 403)) { failGate(level, '账号或密钥不正确'); return; }
+        /* 网络问题 → 退回本地密钥，保证离线也能进 */
+        localFallback();
+      });
   }
 
   /* ---------------- 核验动画 ---------------- */
@@ -395,9 +432,9 @@
     later(function () {
       vPhase = 2;
       verify.setAttribute('data-phase', 'welcome');
-      var role = level === 'high' ? '超级管理员' : '中级管理员';
+      var role = roleName(state.accountLevel || (level === 'high' ? 'high' : 'mid'));
       vTitle.textContent = '欢迎——' + user + '：' + role;
-      vEn.textContent = 'WELCOME — ' + roman(user) + ' : ' + (level === 'high' ? 'SUPER ADMINISTRATOR' : 'ADMINISTRATOR');
+      vEn.textContent = 'WELCOME — ' + roman(user) + ' : ' + roleEn(state.accountLevel || (level === 'high' ? 'high' : 'mid'));
       vNote.textContent = 'SESSION GRANTED · ' + stamp();
       setBar(100);
     }, 2650 * SLOW);
@@ -407,8 +444,15 @@
     }, 4500 * SLOW);
   }
 
+  function roleName(lv) {
+    return lv === 'high' ? '高级管理员' : lv === 'mid' ? '中级管理员' : '普通管理员';
+  }
+  function roleEn(lv) {
+    return lv === 'high' ? 'SUPER ADMINISTRATOR' : lv === 'mid' ? 'ADMINISTRATOR' : 'JUNIOR ADMIN';
+  }
+
   function roman(name) {
-    var map = { '温泊': 'WENBO', '郭老师': 'TEACHER GUO' };
+    var map = { '温泊': 'WENBO', '郭老师': 'TEACHER GUO', '李允正': 'LI YUNZHENG' };
     return map[name] || String(name).toUpperCase();
   }
 
@@ -418,8 +462,9 @@
     verify.setAttribute('data-phase', 'check');
     try {
       sessionStorage.setItem('c74_admin_session', JSON.stringify({
-        level: vLevel === 'high' ? 'high' : 'mid',
+        level: state.accountLevel || (vLevel === 'high' ? 'high' : 'mid'),
         user: state.user,
+        accountId: state.accountId || null,
         at: Date.now()
       }));
     } catch (e) {}
@@ -432,9 +477,9 @@
         clearTimers();
         verify.setAttribute('data-phase', 'welcome');
         if (vCheck) vCheck.setAttribute('opacity', '1');
-        var role = vLevel === 'high' ? '超级管理员' : '中级管理员';
+        var role = roleName(state.accountLevel || (vLevel === 'high' ? 'high' : 'mid'));
         vTitle.textContent = '欢迎——' + state.user + '：' + role;
-        vEn.textContent = 'WELCOME — ' + roman(state.user) + ' : ' + (vLevel === 'high' ? 'SUPER ADMINISTRATOR' : 'ADMINISTRATOR');
+        vEn.textContent = 'WELCOME — ' + roman(state.user) + ' : ' + roleEn(state.accountLevel || (vLevel === 'high' ? 'high' : 'mid'));
         vNote.textContent = 'SESSION GRANTED · ' + stamp();
         setBar(100);
         vPhase = 2;
