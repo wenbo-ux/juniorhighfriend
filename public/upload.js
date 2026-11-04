@@ -75,7 +75,7 @@
         : '<div class="ph-grid n' + imgs.length + '">' + imgs.map(function (u) {
             return '<img src="' + u + '" alt="">';
           }).join('') + '</div>';
-      return '<article class="card fade" data-post="' + p.id + '">' +
+      return '<article class="card pop" data-post="' + p.id + '">' +
         '<div class="ph">' + media +
         '<span class="ph-date">' + esc(p.date) + '</span>' +
         '<span class="ph-no">' + esc(p.no || 'IMG') + '</span></div>' +
@@ -83,7 +83,7 @@
         '<p class="cap up-full">' + esc(p.text) + '</p>' + bar + '</div></article>';
     }
 
-    return '<article class="card txt fade" data-post="' + p.id + '">' +
+    return '<article class="card txt pop" data-post="' + p.id + '">' +
       '<div class="body">' + head +
       '<p class="up-text">' + esc(p.text) + '</p>' + bar + '</div></article>';
   }

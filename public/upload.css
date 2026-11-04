@@ -99,3 +99,7 @@
 .up-del:active{background:rgba(255,110,140,.22);color:#ffb0c0}
 .up-del svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
 .card.txt .up-del{right:6px;top:6px}
+
+/* 动态卡片入场：只动 transform，避免 WebView 里 opacity 卡在 0 */
+@keyframes cardPop{from{transform:translateY(8px)}to{transform:none}}
+.card.pop{animation:cardPop .38s cubic-bezier(.22,.7,.3,1)}
