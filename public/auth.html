@@ -111,12 +111,8 @@
 
           <div class="field">
             <label class="lb" for="code">注册码 <span class="hint">INVITE CODE</span></label>
-            <div class="codebox" id="codeBox">
-              <input class="cz" id="code" maxlength="4" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX" aria-label="注册码第1段">
-              <span class="dash"></span>
-              <input class="cz" id="code2" maxlength="4" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX" aria-label="注册码第2段">
-              <span class="dash"></span>
-              <input class="cz" id="code3" maxlength="4" inputmode="text" autocomplete="off" spellcheck="false" placeholder="XXXX" aria-label="注册码第3段">
+            <div class="codebox one" id="codeBox">
+              <input class="cz" id="code" maxlength="24" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="输入注册码（不区分大小写）" aria-label="注册码">
               <button type="button" class="cpy" id="pasteCode" aria-label="粘贴注册码">
                 <svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="12" rx="2"/><path d="M15.5 5.5H6.5a1.5 1.5 0 00-1.5 1.5v9"/></svg>
               </button>
@@ -200,8 +196,8 @@
         </form>
 
         <div class="demo">
-          <b>演示注册码</b> · <code>7C4A-9F2E-B615</code><br>
-          也可以输入格式正确的任意码（3 段 × 4 位字母数字）走通流程
+          <b>注册码</b> · 由管理员一次性发放，每人一个<br>
+          不区分大小写，一个码只能用一次，用完即失效
         </div>
       </div>
 
@@ -234,6 +230,6 @@
 
 <div class="toast" id="toast" style="position:fixed;left:50%;bottom:calc(26px + env(safe-area-inset-bottom));z-index:60;transform:translate(-50%,14px);opacity:0;pointer-events:none;padding:9px 15px;border-radius:12px;border:1px solid rgba(120,185,255,.26);background:rgba(10,20,34,.94);font-size:11.5px;letter-spacing:.06em;color:#cfe6ff;box-shadow:0 12px 34px rgba(0,0,0,.5);transition:opacity .24s,transform .24s;white-space:nowrap"></div>
 <script src="store.js?v=2"></script>
-<script src="auth.js?v=10"></script>
+<script src="auth.js?v=11"></script>
 </body>
 </html>

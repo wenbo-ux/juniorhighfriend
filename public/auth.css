@@ -317,3 +317,9 @@ label.lb .hint{color:var(--dim-2);letter-spacing:.14em}
 @media (prefers-reduced-motion:reduce){
   .arc,.view,.submit .ld{animation:none}
 }
+
+/* 单框注册码（无分段） */
+.codebox.one{gap:8px;padding:0 6px 0 12px}
+.codebox.one .cz{flex:1;min-width:0;max-width:none;height:52px;text-align:left;
+  letter-spacing:.14em;font-size:16px;font-family:ui-monospace,Menlo,monospace}
+.codebox.one .cz::placeholder{letter-spacing:.02em;font-size:13px;font-family:-apple-system,"PingFang SC",sans-serif}

@@ -30,18 +30,16 @@
   var API = {
     /* 注册码：本地格式校验，真正是否可用由 /api/register 判定 */
     verifyCode: function (code) {
-      return new Promise(function (resolve) {
-        setTimeout(function () {
-          var norm = code.toUpperCase();
-          if (MOCK_CODES[norm]) {
-            var d = MOCK_CODES[norm];
-            resolve({ ok: true, data: { use: d.use, batch: d.batch, tags: d.tags } });
-          } else if (/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(norm)) {
-            resolve({ ok: true, data: { use: '班级成员 · 普通成员', batch: '2026 秋季 · 通用', tags: ['通用码', '绑定学号'] } });
-          } else {
-            resolve({ ok: false, error: '注册码格式不对（XXXX-XXXX-XXXX）' });
-          }
-        }, 380);
+      return post('/api/code/check', { code: code }).then(function (d) {
+        if (d.valid) {
+          return { ok: true, data: {
+            use: d.note || '班级成员', batch: d.batch || '2026 秋季',
+            tags: ['一次性', '绑定学号']
+          } };
+        }
+        return { ok: false, error: d.error || '注册码无效' };
+      }).catch(function () {
+        return { ok: false, error: '连不上服务器，检查网络' };
       });
     },
 
@@ -72,6 +70,12 @@
           sessionStorage.setItem('c74_session', JSON.stringify({
             id: u.id, name: u.name, role: u.level, level: u.level, at: Date.now()
           }));
+          /* 账号等级直接绑定管理权限：高管/中管/普管登录即生效 */
+          if (u.level === 'high' || u.level === 'mid' || u.level === 'junior') {
+            sessionStorage.setItem('c74_admin_session', JSON.stringify({
+              level: u.level, user: u.name || u.user, accountId: u.id, at: Date.now()
+            }));
+          }
         } catch (e) {}
         return { ok: true, data: u };
       }).catch(function (e) {
@@ -210,82 +214,70 @@
     });
   });
 
-  /* ---------------- 注册码分段输入 ---------------- */
-  var zs = [$('#code'), $('#code2'), $('#code3')];
+  /* ---------------- 注册码（单框，无固定格式） ---------------- */
+  var codeInput = $('#code');
   var codeState = $('#codeState'), csLabel = $('#csLabel');
   var codeMsg = $('#codeMsg'), csUse = $('#csUse'), csBatch = $('#csBatch'), csChips = $('#csChips');
   var codeBox = $('#codeBox');
-  var lastVerified = null;   /* 已生效的注册码 */
-  var verifyTimer = null;
-  var verifying = false;
+  var lastVerified = null;
+  var verifyTimer = null, verifying = false;
 
   function joinCode() {
-    return zs.map(function (z) { return (z.value || '').toUpperCase(); }).join('-').replace(/-+$/, '');
+    return (codeInput.value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
   function fullCode() {
-    return zs.every(function (z) { return z.value.length === 4; }) ? joinCode() : '';
+    var c = joinCode();
+    return c.length >= 6 ? c : '';
   }
   function resetVerify() {
     lastVerified = null;
     codeBox.classList.remove('locked');
-    zs.forEach(function (z) { z.disabled = false; z.classList.remove('ok', 'err'); });
+    codeInput.disabled = false;
+    codeInput.classList.remove('ok', 'err');
     codeState.classList.remove('on', 'bad');
     csLabel.textContent = '待输入';
     showMsg(codeMsg, '');
   }
 
-  zs.forEach(function (z, i) {
-    z.addEventListener('input', function () {
-      var v = z.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (v.length > 4) {
-        /* 自动填充 / 一次性塞入整串：向后逐段拆分 */
-        var j = i;
-        while (v.length && j < 3) { zs[j].value = v.slice(0, 4); v = v.slice(4); j++; }
-        zs[Math.min(2, j)].focus();
-      } else {
-        z.value = v;
-      }
-      z.classList.remove('ok', 'err');
-      if (z.value.length === 4 && zs[i + 1] && !zs[i + 1].value) zs[i + 1].focus();
-      clearTimeout(verifyTimer);
-      if (lastVerified && fullCode() !== lastVerified) resetVerify();
-      var c = fullCode();
-      if (c) { verifyTimer = setTimeout(function () { doVerify(c); }, 260); }
-      else { codeState.classList.remove('on', 'bad'); csLabel.textContent = '待输入'; showMsg(codeMsg, ''); }
-    });
-    /* 退格回到上一段 */
-    z.addEventListener('keydown', function (e) {
-      if (e.key === 'Backspace' && !z.value && zs[i - 1]) { zs[i - 1].focus(); }
-      if (e.key === 'Enter') { e.preventDefault(); $('#regForm').requestSubmit(); }
-    });
-    /* 整段粘贴 */
-    z.addEventListener('paste', function (e) {
-      var txt = (e.clipboardData || window.clipboardData).getData('text') || '';
-      var clean = txt.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (clean.length >= 8) {
-        e.preventDefault();
-        fillCode(clean);
-      }
-    });
+  codeInput && codeInput.addEventListener('input', function () {
+    var v = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (v !== codeInput.value) codeInput.value = v;
+    codeInput.classList.remove('ok', 'err');
+    clearTimeout(verifyTimer);
+    if (lastVerified && fullCode() !== lastVerified) resetVerify();
+    var c = fullCode();
+    if (c) {
+      verifyTimer = setTimeout(function () { doVerify(c); }, 320);
+    } else {
+      codeState.classList.remove('on', 'bad');
+      csLabel.textContent = '待输入';
+      showMsg(codeMsg, '');
+    }
   });
 
-  function fillCode(clean) {
-    for (var i = 0; i < 3; i++) {
-      zs[i].value = clean.substr(i * 4, 4);
-      zs[i].classList.remove('ok', 'err');
-    }
-    resetVerify();
-    var c = fullCode();
-    if (c) doVerify(c);
-    else if (zs[2].value.length < 4) zs[Math.min(2, Math.floor(clean.length / 4))].focus();
-  }
+  codeInput && codeInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); $('#regForm').requestSubmit(); }
+  });
+
+  codeInput && codeInput.addEventListener('paste', function (e) {
+    var txt = (e.clipboardData || window.clipboardData).getData('text') || '';
+    var clean = txt.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!clean) return;
+    e.preventDefault();
+    codeInput.value = clean;
+    codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
 
   $('#pasteCode') && $('#pasteCode').addEventListener('click', function () {
     if (navigator.clipboard && navigator.clipboard.readText) {
       navigator.clipboard.readText().then(function (txt) {
         var clean = (txt || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (clean.length >= 8) { fillCode(clean); }
-        else { toast('剪贴板里没有可用的注册码'); }
+        if (clean.length >= 6) {
+          codeInput.value = clean;
+          codeInput.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          toast('剪贴板里没有可用的注册码');
+        }
       }).catch(function () { toast('读不到剪贴板，手动输入吧'); });
     } else {
       toast('当前环境不支持读取剪贴板');
@@ -300,7 +292,7 @@
     showMsg(codeMsg, '');
     API.verifyCode(code).then(function (res) {
       verifying = false;
-      if (fullCode() !== code) return;   /* 期间又改了 */
+      if (fullCode() !== code) return;
       if (res.ok) {
         lastVerified = code;
         codeState.classList.add('on');
@@ -309,19 +301,20 @@
         csBatch.textContent = res.data.batch;
         csChips.innerHTML = '';
         (res.data.tags || []).forEach(function (t) {
-          var s = document.createElement('span');
-          s.className = 'chip';
-          s.textContent = t;
-          csChips.appendChild(s);
+          var sp = document.createElement('span');
+          sp.className = 'chip';
+          sp.textContent = t;
+          csChips.appendChild(sp);
         });
-        zs.forEach(function (z) { z.classList.add('ok'); z.disabled = true; });
+        codeInput.classList.add('ok');
+        codeInput.disabled = true;
         codeBox.classList.add('locked');
         showMsg(codeMsg, '注册码校验通过', 'ok');
         var n = $('#regName'); if (n) n.focus();
       } else {
         codeState.classList.add('bad');
         csLabel.textContent = '无效';
-        zs.forEach(function (z) { z.classList.add('err'); });
+        codeInput.classList.add('err');
         showMsg(codeMsg, res.error || '注册码无效');
         csUse.textContent = '—'; csBatch.textContent = '—'; csChips.innerHTML = '';
       }
@@ -358,8 +351,8 @@
     var agree = $('#agree').checked;
     var code = fullCode();
 
-    if (!code) { showMsg(codeMsg, '请先输入 3 段注册码'); toast('请先输入注册码'); return; }
-    if (!lastVerified) { showMsg(codeMsg, '注册码还没通过校验'); zs[0].focus(); return; }
+    if (!code) { showMsg(codeMsg, '请先输入注册码'); toast('请先输入注册码'); return; }
+    if (!lastVerified) { showMsg(codeMsg, '注册码还没通过校验'); codeInput.focus(); return; }
     if (name.length < 2) { showMsg($('#regMsg'), '昵称至少 2 个字'); $('#regName').focus(); return; }
     if (!/^[A-Za-z0-9-]{4,12}$/.test(sid)) { showMsg($('#regMsg'), '学号格式：字母数字，4–12 位，可带 -'); $('#regId').focus(); return; }
     if (pwd.length < 6) { showMsg($('#regMsg'), '密码至少 6 位'); $('#regPwd').focus(); return; }

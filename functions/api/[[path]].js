@@ -41,6 +41,7 @@ async function handle(req, env) {
       if (path === '/api/notices' && req.method === 'GET') return await listNotices(req, env, cors);
       if (path === '/api/notices' && req.method === 'POST') return await createNotice(req, env, cors);
       if (path === '/api/register' && req.method === 'POST') return await register(req, env, cors);
+      if (path === '/api/code/check' && req.method === 'POST') return await checkCode(req, env, cors);
       if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
       if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
 
@@ -400,14 +401,31 @@ async function createNotice(req, env, cors) {
     pinned: pinned ? 1 : 0, images } }, 200, cors);
 }
 
+async function findCode(env, code) {
+  const c = String(code || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!c) return null;
+  const row = await env.DB.prepare('SELECT * FROM codes WHERE code = ?').bind(c).first();
+  return row || null;
+}
+
+async function checkCode(req, env, cors) {
+  const b = await req.json().catch(() => ({}));
+  const row = await findCode(env, b.code);
+  if (!row) return json({ ok: true, valid: false, error: '注册码无效' }, 200, cors);
+  if (row.used) return json({ ok: true, valid: false, error: '这个注册码已经被用过了' }, 200, cors);
+  return json({ ok: true, valid: true, note: row.note || '班级成员', batch: row.batch || '2026 秋季' }, 200, cors);
+}
+
 async function register(req, env, cors) {
   const b = await req.json().catch(() => ({}));
   const user = String(b.user || '').trim();
   const pass = String(b.pass || '');
   const code = String(b.code || '').trim().toUpperCase();
-  const join = (env.JOIN_CODE || '7C4A-9F2E-B615').toUpperCase();
   if (!user || pass.length < 6) return json({ error: '昵称或密码不合规' }, 400, cors);
-  if (code !== join) return json({ error: '注册码不对' }, 403, cors);
+
+  const row = await findCode(env, code);
+  if (!row) return json({ error: '注册码无效' }, 403, cors);
+  if (row.used) return json({ error: '这个注册码已经被用过了' }, 409, cors);
 
   const exist = await env.DB.prepare('SELECT id FROM accounts WHERE user = ?').bind(user).first();
   if (exist) return json({ error: '这个昵称已被使用' }, 409, cors);
@@ -416,6 +434,8 @@ async function register(req, env, cors) {
   const id = uid('a_');
   await env.DB.prepare('INSERT INTO accounts (id,user,name,level,pass,created_at) VALUES (?,?,?,?,?,?)')
     .bind(id, user, String(b.name || user).slice(0, 20), 'member', hash, new Date().toISOString()).run();
+  await env.DB.prepare('UPDATE codes SET used = 1, used_by = ?, used_at = ? WHERE code = ?')
+    .bind(user, new Date().toISOString(), String(code).replace(/[^A-Z0-9]/g, '')).run();
   return json({ ok: true, user: { id, user, name: String(b.name || user).slice(0, 20), level: 'member' } }, 200, cors);
 }
 
