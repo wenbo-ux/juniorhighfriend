@@ -89,7 +89,7 @@
   function load(silent) {
     if (busy) return Promise.resolve();
     busy = true;
-    return api('/points').then(function (d) {
+    return api('/api/points').then(function (d) {
       data = d || data;
       loaded = true;
       busy = false;
@@ -122,7 +122,7 @@
       var val = inp.value.trim();
       if (!save || val === (r.name || '')) { renderList(); return; }
       inp.disabled = true;
-      api('/points/name', { method: 'POST', body: { slot: slot, name: val } }).then(function (d) {
+      api('/api/points/name', { method: 'POST', body: { slot: slot, name: val } }).then(function (d) {
         r.name = d.name || null;
         var filled = data.rows.filter(function (x) { return x.name; }).length;
         subEl.textContent = filled + ' / ' + data.rows.length + ' 已登记';
@@ -153,7 +153,7 @@
       void el.offsetWidth;
       el.classList.add(r.score > 0 ? 'pos' : (r.score < 0 ? 'neg' : 'zero'), 'pop');
     }
-    api('/points/score', { method: 'POST', body: { slot: slot, delta: delta } }).then(function (d) {
+    api('/api/points/score', { method: 'POST', body: { slot: slot, delta: delta } }).then(function (d) {
       if (el && typeof d.score === 'number' && d.score !== r.score) {
         r.score = d.score;
         el.textContent = d.score;
@@ -185,7 +185,7 @@
 
   function saveNotice() {
     var txt = nEdit.value.trim();
-    api('/points/notice', { method: 'POST', body: { text: txt } }).then(function (d) {
+    api('/api/points/notice', { method: 'POST', body: { text: txt } }).then(function (d) {
       data.notice = d.notice || '';
       nText.textContent = data.notice || '还没有公告';
       nText.classList.toggle('empty', !data.notice);
