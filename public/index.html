@@ -308,6 +308,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 <link rel="stylesheet" href="manage.css?v=8">
 <link rel="stylesheet" href="upload.css?v=5">
 <link rel="stylesheet" href="report.css?v=2">
+<link rel="stylesheet" href="points.css?v=1">
 </head>
 <body>
 
@@ -425,6 +426,27 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     </div>
   </div>
 </div>
+
+<!-- 积分册 -->
+<section class="pview" id="pointsView" hidden>
+  <div class="pv-head">
+    <h2>积分册</h2>
+    <span class="pv-sub" id="pvSub">0 / 50 已登记</span>
+  </div>
+
+  <div class="pv-notice">
+    <div class="pn-label"><b>📢 郭老师的话</b><button class="pn-edit" id="pvNoticeEditBtn" hidden>编辑</button></div>
+    <div class="pn-text empty" id="pvNoticeText">还没有公告</div>
+    <textarea id="pvNoticeEdit" hidden maxlength="500" placeholder="写一条积分公告…（只有郭老师能发）"></textarea>
+    <div class="pn-acts" id="pvNoticeActs" hidden>
+      <button id="pngCancel">取消</button>
+      <button class="ok" id="pngSave">发布</button>
+    </div>
+  </div>
+
+  <div class="pv-list" id="pvList"></div>
+  <div class="pv-foot" id="pvFoot"></div>
+</section>
 
 <!-- 底部导航 -->
 <nav class="tabbar">
@@ -564,11 +586,14 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
       tab.classList.add('active');
       var name = tab.dataset.tab;
       if(name === '我的'){
+        if(window.C74Points) window.C74Points.close();
         if(window.C74Account) window.C74Account.open();
         else toast('账户面板还没准备好');
-      } else if(name !== '首页'){
-        toast('「' + name + '」页面还没做');
+      } else if(name === '积分'){
+        if(window.C74Points) window.C74Points.open();
+        else toast('积分页还没准备好');
       } else {
+        if(window.C74Points) window.C74Points.close();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     });
@@ -746,5 +771,6 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 <script src="manage.js?v=16"></script>
 <script src="upload.js?v=16"></script>
 <script src="report.js?v=3"></script>
+<script src="points.js?v=1"></script>
 </body>
 </html>

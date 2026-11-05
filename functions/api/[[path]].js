@@ -78,6 +78,11 @@ async function handle(req, env) {
       const cd = path.match(/^\/api\/codes\/([A-Z0-9]+)$/);
       if (cd && req.method === 'DELETE') return await dropCode(req, env, cors, cd[1]);
 
+      if (path === '/api/points' && req.method === 'GET') return await getPoints(req, env, cors);
+      if (path === '/api/points/name' && req.method === 'POST') return await setPointName(req, env, cors);
+      if (path === '/api/points/score' && req.method === 'POST') return await addPointScore(req, env, cors);
+      if (path === '/api/points/notice' && req.method === 'POST') return await setPointsNotice(req, env, cors);
+
       const m = path.match(/^\/api\/reports\/([\w-]+)\/review$/);
       if (m && req.method === 'POST') return await reviewReport(req, env, cors, m[1]);
 
@@ -962,6 +967,80 @@ async function readInbox(req, env, cors, id) {
 }
 
 /* ---------------- 日志 ---------------- */
+
+/* ---------------- 积分册 ---------------- */
+/* 加减分 / 公告：只有「积分管理员」（默认郭老师）能改；名字：中管及以上能改 */
+async function pointOwnerIds(env) {
+  const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'points_owner'").first();
+  if (row && row.value) {
+    try { const a = JSON.parse(row.value); if (Array.isArray(a) && a.length) return a; } catch (e) {}
+  }
+  return [];
+}
+async function isPointOwner(u, env) {
+  if (!u || !need(u, 'mid')) return false;
+  const ids = await pointOwnerIds(env);
+  if (ids.length) return ids.indexOf(u.id) >= 0;
+  return (u.name === '郭老师') || (u.user === '郭老师');
+}
+async function getPoints(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const { results } = await env.DB.prepare(
+    'SELECT slot,name,score,updated_at FROM points ORDER BY slot ASC'
+  ).all();
+  const nRow = await env.DB.prepare("SELECT value FROM settings WHERE key = 'points_notice'").first();
+  let notice = '';
+  try { notice = nRow ? (JSON.parse(nRow.value).text || '') : ''; } catch (e) { notice = nRow ? String(nRow.value) : ''; }
+  const owner = await isPointOwner(u, env);
+  return json({
+    ok: true,
+    rows: results || [],
+    notice: notice,
+    can: { name: need(u, 'mid'), score: owner, notice: owner },
+    me: { name: u.name || u.user, level: u.level }
+  }, 200, cors);
+}
+async function setPointName(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '只有中管及以上能填名字' }, 403, cors);
+  const b = await req.json().catch(() => ({}));
+  const slot = parseInt(b.slot, 10);
+  if (!(slot >= 1 && slot <= 50)) return json({ error: '序号不对' }, 400, cors);
+  const name = String(b.name == null ? '' : b.name).trim().slice(0, 12);
+  await env.DB.prepare('UPDATE points SET name = ?, updated_at = ? WHERE slot = ?')
+    .bind(name || null, nowISO(), slot).run();
+  return json({ ok: true, slot, name: name }, 200, cors);
+}
+async function addPointScore(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!(await isPointOwner(u, env))) return json({ error: '只有郭老师能加减分' }, 403, cors);
+  const b = await req.json().catch(() => ({}));
+  const slot = parseInt(b.slot, 10);
+  const delta = parseInt(b.delta, 10);
+  if (!(slot >= 1 && slot <= 50)) return json({ error: '序号不对' }, 400, cors);
+  if (!delta || Math.abs(delta) > 1000) return json({ error: '分值不对' }, 400, cors);
+  const cur = await env.DB.prepare('SELECT score FROM points WHERE slot = ?').bind(slot).first();
+  if (!cur) return json({ error: '没有这一行' }, 404, cors);
+  const score = (cur.score || 0) + delta;
+  await env.DB.prepare('UPDATE points SET score = ?, updated_at = ? WHERE slot = ?')
+    .bind(score, nowISO(), slot).run();
+  return json({ ok: true, slot, score }, 200, cors);
+}
+async function setPointsNotice(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!(await isPointOwner(u, env))) return json({ error: '只有郭老师能发积分公告' }, 403, cors);
+  const b = await req.json().catch(() => ({}));
+  const text = String(b.text == null ? '' : b.text).trim().slice(0, 500);
+  const val = JSON.stringify({ text: text, by: u.name || u.user, at: nowISO() });
+  await env.DB.prepare(
+    "INSERT INTO settings (key,value,updated_at) VALUES ('points_notice',?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at"
+  ).bind(val, nowISO()).run();
+  return json({ ok: true, notice: text }, 200, cors);
+}
 async function logs(req, env, cors) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);

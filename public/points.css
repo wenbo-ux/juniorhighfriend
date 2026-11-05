@@ -1,0 +1,88 @@
+/* ---------- 积分册 ---------- */
+.pview{
+  position:fixed;left:0;right:0;top:0;bottom:0;z-index:35;
+  background:var(--bg);
+  display:flex;flex-direction:column;
+  padding:calc(14px + env(safe-area-inset-top)) 14px calc(86px + env(safe-area-inset-bottom));
+  overflow-y:auto;-webkit-overflow-scrolling:touch;
+}
+.pview[hidden]{display:none !important}
+
+.pv-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:2px 2px 12px}
+.pv-head h2{margin:0;font-size:20px;font-weight:650;letter-spacing:.06em}
+.pv-sub{font-size:11px;color:var(--dim-2);letter-spacing:.1em}
+
+/* 公告 */
+.pv-notice{
+  position:relative;border:1px solid var(--line);border-radius:16px;
+  background:linear-gradient(160deg,rgba(95,227,255,.07),rgba(160,140,255,.05) 60%,transparent);
+  padding:12px 14px;margin-bottom:14px;
+}
+.pv-notice .pn-label{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.14em;
+  color:var(--cyan);margin-bottom:7px}
+.pv-notice .pn-label b{font-weight:600}
+.pv-notice .pn-text{font-size:13.5px;line-height:1.7;color:#cfe0f7;white-space:pre-wrap;word-break:break-word}
+.pv-notice .pn-text.empty{color:var(--dim-2);font-style:normal}
+.pn-edit{margin-left:auto;font-size:11px;color:var(--violet);border:1px solid rgba(160,140,255,.35);
+  background:rgba(160,140,255,.08);border-radius:9px;padding:3px 9px;letter-spacing:.06em}
+.pn-edit:active{transform:scale(.95)}
+#pvNoticeEdit{width:100%;min-height:66px;margin-top:6px;resize:vertical;
+  background:rgba(4,8,16,.75);border:1px solid var(--line-2);border-radius:12px;
+  color:var(--ink);font:inherit;font-size:13.5px;line-height:1.65;padding:9px 11px;outline:none}
+#pvNoticeEdit[hidden]{display:none}
+.pn-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.pn-acts[hidden]{display:none}
+.pn-acts button{font-size:12.5px;padding:6px 14px;border-radius:10px;letter-spacing:.06em;
+  border:1px solid var(--line-2);background:transparent;color:var(--dim)}
+.pn-acts .ok{border-color:rgba(95,227,255,.45);background:rgba(95,227,255,.12);color:var(--cyan)}
+
+/* 列表 */
+.pv-list{display:flex;flex-direction:column;gap:7px}
+.pv-zero{font-size:12px;color:var(--dim-2);text-align:center;padding:20px 0}
+
+.prow{
+  display:flex;align-items:center;gap:9px;
+  border:1px solid var(--line);border-radius:14px;background:var(--panel);
+  padding:9px 10px 9px 12px;
+  transition:border-color .2s,background .2s;
+}
+.prow.me{border-color:rgba(95,227,255,.42);background:rgba(95,227,255,.07)}
+.pno{font-size:11px;color:var(--dim-2);letter-spacing:.08em;width:20px;flex:0 0 20px;
+  font-variant-numeric:tabular-nums}
+.pname{
+  flex:1;min-width:0;text-align:left;font:inherit;font-size:14px;color:var(--ink);
+  background:transparent;border:0;padding:3px 0;letter-spacing:.02em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.pname.empty{color:var(--dim-2);font-size:13px}
+.pname.can{cursor:text}
+.pname.can:active{opacity:.6}
+.pname-input{
+  flex:1;min-width:0;font:inherit;font-size:14px;color:var(--ink);
+  background:rgba(4,8,16,.8);border:1px solid var(--line-2);border-radius:9px;
+  padding:4px 9px;outline:none;
+}
+.psc{
+  min-width:42px;text-align:right;font-size:16px;font-variant-numeric:tabular-nums;
+  letter-spacing:.02em;color:var(--ink);
+}
+.psc.pos{color:#6ef0b5}
+.psc.neg{color:#ff8080}
+.psc.zero{color:var(--dim-2)}
+
+.pbtn{
+  width:30px;height:30px;flex:0 0 30px;border-radius:10px;border:1px solid var(--line-2);
+  background:rgba(255,255,255,.03);color:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  font-size:17px;line-height:1;padding:0;
+}
+.pbtn[hidden]{display:none}
+.pbtn.up{border-color:rgba(110,240,181,.42);color:#6ef0b5;background:rgba(110,240,181,.09)}
+.pbtn.down{border-color:rgba(255,128,128,.38);color:#ff8080;background:rgba(255,128,128,.08)}
+.pbtn:active{transform:scale(.92)}
+
+.psc.pop{animation:scPop .32s ease}
+@keyframes scPop{0%{transform:scale(1)}45%{transform:scale(1.22)}100%{transform:scale(1)}}
+
+.pv-foot{font-size:11px;color:var(--dim-2);text-align:center;padding:16px 0 4px;line-height:1.7}
