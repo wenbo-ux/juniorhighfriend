@@ -76,9 +76,9 @@
     if (p.type === 'photo' && p.images && p.images.length) {
       var imgs = p.images.slice(0, 4);
       var media = imgs.length === 1
-        ? '<img class="ph-one" src="' + imgs[0] + '" alt="">'
-        : '<div class="ph-grid n' + imgs.length + '">' + imgs.map(function (u) {
-            return '<img src="' + u + '" alt="">';
+        ? '<button class="ph-open" data-img="0"><img class="ph-one" src="' + imgs[0] + '" alt=""></button>'
+        : '<div class="ph-grid n' + imgs.length + '">' + imgs.map(function (u, i) {
+            return '<button class="ph-open" data-img="' + i + '"><img src="' + u + '" alt=""></button>';
           }).join('') + '</div>';
       return '<article class="card pop" data-post="' + p.id + '">' +
         '<div class="ph">' + media +
@@ -114,6 +114,7 @@
       del.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
       card.appendChild(del);
     }
+    card.__images = (p.images || []).slice();
     col.insertBefore(card, col.firstChild);
     if (window.C74Cmt) window.C74Cmt.register(p);
     return card;
@@ -437,6 +438,75 @@
       if (st === 'hide') { c.hidden = true; return; }
       c.hidden = false;
     });
+  }
+
+  /* ---------------- 图片查看 / 下载 ---------------- */
+  var bm = null, bimg = null;
+
+  function ensureViewer() {
+    if (bm) return;
+    bm = document.createElement('div');
+    bm.className = 'bv-mask';
+    bm.innerHTML =
+      '<div class="bv-top"><span id="bvCount">1 / 1</span>' +
+        '<button class="bv-btn" id="bvSave"><svg viewBox="0 0 24 24"><path d="M12 4v10"/><path d="M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>保存</button>' +
+        '<button class="bv-btn" id="bvClose"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' +
+      '</div>' +
+      '<div class="bv-stage"><img id="bvImg" alt=""></div>' +
+      '<div class="bv-tip">长按图片也可以「存储到照片」</div>';
+    document.body.appendChild(bm);
+    bimg = bm.querySelector('#bvImg');
+
+    bm.querySelector('#bvClose').addEventListener('click', function () { bm.classList.remove('on'); });
+    bm.addEventListener('click', function (e) { if (e.target === bm) bm.classList.remove('on'); });
+  }
+
+  var bvList = [], bvIdx = 0;
+
+  function showImage(list, idx) {
+    ensureViewer();
+    bvList = list || [];
+    bvIdx = idx || 0;
+    paintViewer();
+    bm.classList.add('on');
+  }
+
+  function paintViewer() {
+    if (!bvList.length) return;
+    bimg.src = bvList[bvIdx];
+    var c = bm.querySelector('#bvCount');
+    if (c) c.textContent = (bvIdx + 1) + ' / ' + bvList.length;
+  }
+
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('.ph-open');
+    if (!b) return;
+    var card = b.closest('.card');
+    var list = (card && card.__images) || [];
+    if (!list.length) return;
+    showImage(list, parseInt(b.getAttribute('data-img'), 10) || 0);
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest || !e.target.closest('#bvSave')) return;
+    var src = bvList[bvIdx];
+    if (!src) return;
+    downloadImg(src, 'class7-' + Date.now() + '.jpg');
+  });
+
+  function downloadImg(dataUrl, name) {
+    try {
+      var a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = name;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { a.remove(); }, 100);
+      toast('已开始保存，长按图片也可存到相册');
+    } catch (err) {
+      toast('保存失败，长按图片试试');
+    }
   }
 
   /* ---------------- 从服务器同步（在线模式） ---------------- */
