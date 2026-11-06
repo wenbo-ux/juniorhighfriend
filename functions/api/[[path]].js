@@ -846,10 +846,14 @@ async function listTickets(req, env, cors) {
     approvals: r.approvals ? JSON.parse(r.approvals) : [],
     from_name: r.anonymous ? '匿名' : (r.from_name || '同学')
   }));
+  const pend = list.filter(t => t.status === 'pending');
+  const counts = { all: pend.length, report: 0, apply: 0, note: 0 };
+  pend.forEach(t => { if (counts[t.kind] != null) counts[t.kind]++; });
   return json({
     ok: true,
     tickets: list,
-    pending: list.filter(t => t.status === 'pending').length,
+    pending: pend.length,
+    counts: counts,
     can: { review: reviewer }
   }, 200, cors);
 }

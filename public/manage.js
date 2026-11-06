@@ -1031,7 +1031,14 @@
         '<input class="m-inp" id="acNew" type="password" autocomplete="new-password" placeholder="至少 4 位"></div>' +
       '<div class="m-act-row"><button class="m-btn solid" id="acSave">保 存 修 改</button></div>' +
       (u.level === 'high'
-        ? '<div class="m-sec"><div class="m-sec-h">管理员</div><div class="m-act-row">' +
+        ? '<div class="m-sec"><div class="m-sec-h">审核</div>' +
+            '<div class="ac-qgrid">' +
+              '<button class="ac-q" data-rq="report"><span>举报</span><b id="rqReport">—</b></button>' +
+              '<button class="ac-q" data-rq="apply"><span>申请</span><b id="rqApply">—</b></button>' +
+              '<button class="ac-q" data-rq="note"><span>报备</span><b id="rqNote">—</b></button>' +
+              '<button class="ac-q" data-rq="all"><span>全部</span><b id="rqAll">—</b></button>' +
+            '</div></div>' +
+          '<div class="m-sec"><div class="m-sec-h">管理员</div><div class="m-act-row">' +
           '<button class="m-btn" id="acCodes">注册码管理</button></div></div>'
         : '') +
       '<p class="m-note">改密码后，其它设备上的登录会失效，需要重新登录。改昵称只影响以后显示的内容。</p>';
@@ -1075,6 +1082,25 @@
 
     var acBtn = $('#acCodes');
     if (acBtn) acBtn.addEventListener('click', function () { openCodes(); });
+
+    /* 四个审核分支 */
+    $$('[data-rq]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var kind = b.getAttribute('data-rq');
+        if (window.C74Report && C74Report.openReview) C74Report.openReview(kind);
+        else toast('审核面板还没准备好');
+      });
+    });
+    if (u.level === 'high' && window.C74 && C74.api) {
+      C74.api('/api/tickets').then(function (d) {
+        var c = d.counts || { all: 0, report: 0, apply: 0, note: 0 };
+        var set = function (id, n) { var e = $('#' + id); if (e) { e.textContent = n; e.classList.toggle('hot', n > 0); } };
+        set('rqReport', c.report || 0);
+        set('rqApply', c.apply || 0);
+        set('rqNote', c.note || 0);
+        set('rqAll', c.all || 0);
+      }).catch(function () {});
+    }
 
     $('#acSave').addEventListener('click', function () {
       var name = ($('#acName').value || '').trim();

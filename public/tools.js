@@ -25,12 +25,7 @@
   ];
 
   function open() {
-    var me = null;
-    try { me = window.C74 ? C74.me() : null; } catch (e) {}
     var items = ITEMS.slice();
-    if (me && me.level === 'high') {
-      items.push({ tool: 'queue', cls: 'queue', name: '待处理', desc: '还没人看过的提交' });
-    }
 
     var cards = items.map(function (it) {
       return '<button class="tl-item ' + it.cls + '" data-tool="' + it.tool + '">' +
@@ -62,10 +57,6 @@
     if (!item) return;
     var kind = item.getAttribute('data-tool');
     e.preventDefault();
-    if (kind === 'queue') {
-      if (window.C74Report && C74Report.openReview) C74Report.openReview();
-      return;
-    }
     if (window.C74Report && C74Report.open) {
       C74Report.open(kind);
     } else {

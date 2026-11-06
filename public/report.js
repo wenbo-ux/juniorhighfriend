@@ -55,7 +55,7 @@
       target: '时间 · 可选',
       targetPh: '比如：今天第 2 节、明天上午',
       ph: '几点、什么事、大概耽误多久',
-      min: 2, anonDefault: false, btn: '提 交 报 备', done: '已报备'
+      min: 2, anonDefault: true, btn: '提 交 报 备', done: '已报备'
     }
   };
 
@@ -197,9 +197,11 @@
   }
 
   /* ---------------- 待处理队列（有权限的账号才看得到） ---------------- */
-  function openReview() {
+  function openReview(kind) {
     if (!online()) { toast('离线上看不了'); return; }
-    api('/api/tickets').then(function (d) {
+    var k = kind || 'all';
+    var path = (k === 'all') ? '/api/tickets' : '/api/tickets?kind=' + encodeURIComponent(k);
+    api(path).then(function (d) {
       var list = (d.tickets || []).filter(function (t) { return t.status === 'pending'; });
       var html;
       if (!list.length) {
@@ -226,7 +228,8 @@
             '</div>';
           }).join('');
       }
-      C74Sheet.open('待处理', 'QUEUE', html);
+      var heading = (k === 'all') ? '待处理' : ((KINDS[k] ? KINDS[k].title : '提交') + ' · 待处理');
+      C74Sheet.open(heading, 'QUEUE', html);
 
       $$('[data-tv]').forEach(function (b) {
         b.addEventListener('click', function () {
@@ -239,7 +242,7 @@
               if (res.status === 'pending') toast('记下了，等另一位确认（' + res.approvals + '/' + res.required + '）');
               else if (res.status === 'ok') toast('已处理');
               else toast('已驳回');
-              openReview();
+              openReview(kind);
             })
             .catch(function (e) { b.disabled = false; toast(e.message || '操作失败'); });
         });

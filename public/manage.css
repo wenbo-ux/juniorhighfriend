@@ -182,3 +182,12 @@
 .m-act-row .inp input{flex:1;min-width:0;background:none;border:0;outline:none;
   color:#e7f0fd;font-size:13px;-webkit-appearance:none;appearance:none}
 .m-act-row .inp input::placeholder{color:#4e6483;font-size:12px}
+
+/* 我的 · 审核分支 */
+.ac-qgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:8px}
+.ac-q{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:11px 12px;border-radius:12px;border:1px solid rgba(120,185,255,.16);
+  background:rgba(12,21,36,.62);color:#e7f0fd;font-size:13px;letter-spacing:.02em;text-align:left}
+.ac-q:active{transform:scale(.975)}
+.ac-q b{font:11px/1 ui-monospace,Menlo,monospace;color:#5f7397;min-width:14px;text-align:right}
+.ac-q b.hot{color:#5fe3ff}
