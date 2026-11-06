@@ -1143,27 +1143,30 @@
     });
   }
 
-  /* 复制到剪贴板：优先 Clipboard API，失败退回 textarea + execCommand */
+  /* 复制到剪贴板
+     先用 execCommand('copy')：iOS / 微信里只要有手势就同步成功，不弹权限框；
+     失败再退到 Clipboard API（部分桌面浏览器只认这个）。 */
+  function legacyCopy(text) {
+    var ok = false;
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    try {
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      ok = document.execCommand('copy');
+    } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
   function copyText(text) {
-    function fallback() {
-      return new Promise(function (res, rej) {
-        var ta = document.createElement('textarea');
-        ta.value = text;
-        ta.setAttribute('readonly', '');
-        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
-        document.body.appendChild(ta);
-        ta.select();
-        ta.setSelectionRange(0, text.length);
-        var ok = false;
-        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
-        document.body.removeChild(ta);
-        ok ? res() : rej(new Error('copy failed'));
-      });
-    }
+    if (legacyCopy(text)) return Promise.resolve();
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).catch(fallback);
+      return navigator.clipboard.writeText(text);
     }
-    return fallback();
+    return Promise.reject(new Error('copy failed'));
   }
   function flashCopied(btn, label) {
     var old = btn.textContent;
