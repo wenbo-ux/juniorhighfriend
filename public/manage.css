@@ -175,3 +175,10 @@
 /* 卡片里的头像图 */
 .who .av.av-img{padding:0;overflow:hidden;background:#0a1424}
 .who .av.av-img img{width:100%;height:100%;object-fit:cover;display:block;border-radius:50%}
+
+/* 紧凑行内的输入框（注册码生成那一行等） */
+.m-act-row .inp{display:flex;align-items:center;gap:6px;height:38px;padding:0 10px;
+  border:1px solid rgba(120,185,255,.16);border-radius:10px;background:rgba(5,10,20,.7)}
+.m-act-row .inp input{flex:1;min-width:0;background:none;border:0;outline:none;
+  color:#e7f0fd;font-size:13px;-webkit-appearance:none;appearance:none}
+.m-act-row .inp input::placeholder{color:#4e6483;font-size:12px}
