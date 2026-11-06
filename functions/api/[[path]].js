@@ -798,7 +798,8 @@ async function createTicket(req, env, cors) {
   images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
   if (images.join('').length > 900000) return json({ error: '图片太大，换小一点或只放一张' }, 413, cors);
 
-  const anonymous = b.anonymous ? 1 : 0;
+  /* 只有举报能匿名；申请、报备一律实名 */
+  const anonymous = (kind === 'report' && b.anonymous) ? 1 : 0;
   const id = uid('t_');
   await env.DB.prepare(
     `INSERT INTO tickets (id,kind,type,target,text,images,anonymous,from_id,from_name,status,created_at,approvals,required)

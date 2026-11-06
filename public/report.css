@@ -28,3 +28,7 @@
   background:#7c8ba6;transition:.2s}
 .tk-sw[aria-pressed="true"]{border-color:rgba(95,227,255,.5);background:rgba(95,227,255,.18)}
 .tk-sw[aria-pressed="true"] i{left:21px;background:#5fe3ff}
+.tk-real{display:flex;flex-direction:column;gap:3px;margin:12px 0 4px;padding:11px 12px;
+  border:1px solid rgba(120,185,255,.16);border-radius:12px;background:rgba(12,21,36,.5)}
+.tk-real b{font-size:13px;font-weight:500;color:#cfdcef;letter-spacing:.02em}
+.tk-real span{font-size:10.5px;color:#5f7291;line-height:1.5}

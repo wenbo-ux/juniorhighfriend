@@ -45,7 +45,7 @@
           '<span class="tl-desc">陆续往里加</span>' +
         '</div>' +
       '</div>' +
-      '<p class="tl-foot">三种都可以匿名提交，匿名后只显示「匿名同学」。</p>';
+      '<p class="tl-foot">举报可以匿名，申请和报备会带上你的名字。</p>';
 
     if (window.C74Sheet && C74Sheet.open) C74Sheet.open('小工具', 'TOOLBOX', html);
   }

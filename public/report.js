@@ -37,7 +37,7 @@
       target: '涉及谁 · 可选',
       targetPh: '写清楚是谁、哪条动态',
       ph: '发生了什么、什么时候、影响是什么（至少 4 个字）',
-      min: 4, anonDefault: true, btn: '提 交 举 报', done: '已提交，谢谢你说出来'
+      min: 4, canAnon: true, anonDefault: true, btn: '提 交 举 报', done: '已提交，谢谢你说出来'
     },
     apply: {
       title: '申请', sub: 'APPLY',
@@ -46,7 +46,7 @@
       target: '给谁看 · 可选',
       targetPh: '比如：班主任、班长',
       ph: '要申请什么、为什么、大概什么时候',
-      min: 2, anonDefault: false, btn: '提 交 申 请', done: '申请已提交'
+      min: 2, canAnon: false, anonDefault: false, btn: '提 交 申 请', done: '申请已提交'
     },
     note: {
       title: '报备', sub: 'NOTICE',
@@ -55,7 +55,7 @@
       target: '时间 · 可选',
       targetPh: '比如：今天第 2 节、明天上午',
       ph: '几点、什么事、大概耽误多久',
-      min: 2, anonDefault: true, btn: '提 交 报 备', done: '已报备'
+      min: 2, canAnon: false, anonDefault: false, btn: '提 交 报 备', done: '已报备'
     }
   };
 
@@ -84,10 +84,13 @@
         '<div class="m-act-row"><button class="m-btn" id="tkPick" type="button">选择图片</button>' +
         '<span class="m-note" id="tkCount" style="margin:0;align-self:center">未选择</span></div>' +
         '<div class="rp-thumbs" id="tkThumbs"></div></div>' +
-      '<div class="tk-anon" id="tkAnonRow">' +
-        '<div class="tk-anon-txt"><b>匿名提交</b><span id="tkAnonHint">对方只会看到「匿名同学」</span></div>' +
-        '<button class="tk-sw" id="tkAnon" aria-pressed="' + (K.anonDefault ? 'true' : 'false') + '"><i></i></button>' +
-      '</div>' +
+      (K.canAnon
+        ? '<div class="tk-anon" id="tkAnonRow">' +
+            '<div class="tk-anon-txt"><b>匿名提交</b><span id="tkAnonHint">对方只会看到「匿名同学」</span></div>' +
+            '<button class="tk-sw" id="tkAnon" aria-pressed="' + (K.anonDefault ? 'true' : 'false') + '"><i></i></button>' +
+          '</div>'
+        : '<div class="tk-real"><b>实名提交</b><span>会带上你的名字：' +
+          esc((ME && (ME.name || ME.user)) || '同学') + '</span></div>') +
       '<div class="m-act-row"><button class="m-btn solid" id="tkSend">' + K.btn + '</button></div>';
 
     C74Sheet.open(K.title, K.sub, html);
@@ -101,17 +104,20 @@
       });
     });
 
-    var anonOn = !!K.anonDefault;
-    var anonBtn = $('#tkAnon');
-    anonBtn.addEventListener('click', function () {
-      anonOn = !anonOn;
-      anonBtn.setAttribute('aria-pressed', anonOn ? 'true' : 'false');
-      var hint = $('#tkAnonHint');
-      if (hint) hint.textContent = anonOn ? '对方只会看到「匿名同学」' : '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
-    });
-    if (!K.anonDefault) {
-      var h = $('#tkAnonHint');
-      if (h) h.textContent = '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
+    var anonOn = false;
+    if (K.canAnon) {
+      anonOn = !!K.anonDefault;
+      var anonBtn = $('#tkAnon');
+      anonBtn.addEventListener('click', function () {
+        anonOn = !anonOn;
+        anonBtn.setAttribute('aria-pressed', anonOn ? 'true' : 'false');
+        var hint = $('#tkAnonHint');
+        if (hint) hint.textContent = anonOn ? '对方只会看到「匿名同学」' : '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
+      });
+      if (!K.anonDefault) {
+        var h = $('#tkAnonHint');
+        if (h) h.textContent = '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
+      }
     }
 
     $('#tkPick').addEventListener('click', pick);
@@ -123,10 +129,10 @@
       btn.disabled = true; btn.textContent = '提 交 中…';
       api('/api/tickets', {
         method: 'POST',
-        body: { kind: kind, type: type, target: target, text: text, images: imgs.slice(), anonymous: anonOn }
+        body: { kind: kind, type: type, target: target, text: text, images: imgs.slice(), anonymous: K.canAnon ? anonOn : false }
       }).then(function () {
         C74Sheet.close();
-        toast(anonOn ? K.done + '（匿名）' : K.done);
+        toast(K.canAnon && anonOn ? K.done + '（匿名）' : K.done);
       }).catch(function (e) {
         btn.disabled = false; btn.textContent = K.btn;
         toast(e.message || '提交失败');
