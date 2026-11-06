@@ -1,8 +1,8 @@
 /* =========================================================
-   七年四班 · 举报
-   - 任何人可提交（成员 / 普管 / 中管 / 高管）
-   - 只有两个高管账号能审，且需要两人都通过
-   - 终审通过 → 站内信送到指定中管（默认郭老师），那边弹窗提示
+   七年四班 · 举报 / 申请 / 报备
+   - 任何登录的同学都能提交
+   - 都可以匿名：匿名后对方只看到「匿名同学」
+   - 不需要别人审核，提交后直接进老师那边的通知
    ========================================================= */
 (function () {
   'use strict';
@@ -11,6 +11,7 @@
   try { ME = window.C74 ? C74.me() : null; } catch (e) {}
 
   function $(q, r) { return (r || document).querySelector(q); }
+  function $$(q, r) { return Array.prototype.slice.call((r || document).querySelectorAll(q)); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   }); }
@@ -27,64 +28,111 @@
 
   function online() { return !!(window.C74 && C74.online && C74.online()); }
 
-  /* ---------------- 提交举报 ---------------- */
+  /* ---------------- 三种表单的配置 ---------------- */
+  var KINDS = {
+    report: {
+      title: '举报', sub: 'REPORT',
+      intro: '看到不合适的内容，或者有人被欺负，都可以在这里说。',
+      types: [['member', '成员'], ['post', '动态'], ['other', '其他']],
+      target: '涉及谁 · 可选',
+      targetPh: '写清楚是谁、哪条动态',
+      ph: '发生了什么、什么时候、影响是什么（至少 4 个字）',
+      min: 4, anonDefault: true, btn: '提 交 举 报', done: '已提交，谢谢你说出来'
+    },
+    apply: {
+      title: '申请', sub: 'APPLY',
+      intro: '想请假、换座位、办个活动，写在这儿就行。',
+      types: [['leave', '请假'], ['seat', '换座位'], ['event', '活动'], ['other', '其他']],
+      target: '给谁看 · 可选',
+      targetPh: '比如：班主任、班长',
+      ph: '要申请什么、为什么、大概什么时候',
+      min: 2, anonDefault: false, btn: '提 交 申 请', done: '申请已提交'
+    },
+    note: {
+      title: '报备', sub: 'NOTICE',
+      intro: '迟到、请假、身体不舒服，先留一句，省得大家找你。',
+      types: [['late', '迟到'], ['leave', '请假'], ['sick', '身体不适'], ['other', '其他']],
+      target: '时间 · 可选',
+      targetPh: '比如：今天第 2 节、明天上午',
+      ph: '几点、什么事、大概耽误多久',
+      min: 2, anonDefault: false, btn: '提 交 报 备', done: '已报备'
+    }
+  };
+
+  /* ---------------- 表单 ---------------- */
   var imgs = [];
   var picker = null;
 
-  function openForm() {
-    if (!online()) { toast('离线状态不能举报，先联网登录'); return; }
+  function open(kind) {
+    var K = KINDS[kind] || KINDS.report;
+    if (!online()) { toast('离线上不能提交，先联网登录'); return; }
     imgs = [];
 
     var html =
-      '<div class="m-field"><label>举报类型 <span>TYPE</span></label>' +
-        '<div class="m-pills" id="rpType">' +
-          '<button class="m-pill" data-t="member" aria-pressed="true">成员</button>' +
-          '<button class="m-pill" data-t="post" aria-pressed="false">动态</button>' +
-          '<button class="m-pill" data-t="other" aria-pressed="false">其他</button>' +
+      '<p class="tk-intro">' + esc(K.intro) + '</p>' +
+      '<div class="m-field"><label>类型 <span>TYPE</span></label>' +
+        '<div class="m-pills" id="tkType">' +
+          K.types.map(function (t, i) {
+            return '<button class="m-pill" data-t="' + t[0] + '" aria-pressed="' + (i === 0) + '">' + t[1] + '</button>';
+          }).join('') +
         '</div></div>' +
-      '<div class="m-field"><label>对象 <span>WHO / WHAT</span></label>' +
-        '<div class="inp"><input id="rpTarget" maxlength="30" placeholder="写清楚是谁、哪条动态"></div></div>' +
-      '<div class="m-field"><label>举报理由 <span>REASON · 至少 6 字</span></label>' +
-        '<textarea id="rpReason" maxlength="300" placeholder="发生了什么、什么时候、影响是什么"></textarea></div>' +
-      '<div class="m-field"><label>截图 <span>可选 · 最多 2 张</span></label>' +
-        '<div class="m-act-row"><button class="m-btn" id="rpPick" type="button">选择图片</button>' +
-        '<span class="m-note" id="rpCount" style="margin:0;align-self:center">未选择</span></div>' +
-        '<div class="rp-thumbs" id="rpThumbs"></div></div>' +
-      '<div class="m-act-row"><button class="m-btn solid" id="rpSend">提 交 举 报</button></div>';
+      '<div class="m-field"><label>' + esc(K.target) + '</label>' +
+        '<div class="inp"><input id="tkTarget" maxlength="30" placeholder="' + esc(K.targetPh) + '"></div></div>' +
+      '<div class="m-field"><label>说明 <span>TEXT</span></label>' +
+        '<textarea id="tkText" maxlength="300" placeholder="' + esc(K.ph) + '"></textarea></div>' +
+      '<div class="m-field"><label>图片 <span>可选 · 最多 2 张</span></label>' +
+        '<div class="m-act-row"><button class="m-btn" id="tkPick" type="button">选择图片</button>' +
+        '<span class="m-note" id="tkCount" style="margin:0;align-self:center">未选择</span></div>' +
+        '<div class="rp-thumbs" id="tkThumbs"></div></div>' +
+      '<div class="tk-anon" id="tkAnonRow">' +
+        '<div class="tk-anon-txt"><b>匿名提交</b><span id="tkAnonHint">对方只会看到「匿名同学」</span></div>' +
+        '<button class="tk-sw" id="tkAnon" aria-pressed="' + (K.anonDefault ? 'true' : 'false') + '"><i></i></button>' +
+      '</div>' +
+      '<div class="m-act-row"><button class="m-btn solid" id="tkSend">' + K.btn + '</button></div>';
 
-    C74Sheet.open('举报', 'REPORT · 双人终审', html);
+    C74Sheet.open(K.title, K.sub, html);
 
-    var type = 'member';
-    $$('.m-pill', $('#rpType')).forEach(function (p) {
+    var type = K.types[0][0];
+    $$('#tkType .m-pill').forEach(function (p) {
       p.addEventListener('click', function () {
-        $$('.m-pill', $('#rpType')).forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
+        $$('#tkType .m-pill').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
         p.setAttribute('aria-pressed', 'true');
         type = p.getAttribute('data-t');
       });
     });
 
-    $('#rpPick').addEventListener('click', pick);
-    $('#rpSend').addEventListener('click', function () {
-      var target = ($('#rpTarget').value || '').trim();
-      var reason = ($('#rpReason').value || '').trim();
-      if (target.length < 1) { toast('写一下举报对象'); return; }
-      if (reason.length < 6) { toast('理由至少 6 个字'); return; }
+    var anonOn = !!K.anonDefault;
+    var anonBtn = $('#tkAnon');
+    anonBtn.addEventListener('click', function () {
+      anonOn = !anonOn;
+      anonBtn.setAttribute('aria-pressed', anonOn ? 'true' : 'false');
+      var hint = $('#tkAnonHint');
+      if (hint) hint.textContent = anonOn ? '对方只会看到「匿名同学」' : '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
+    });
+    if (!K.anonDefault) {
+      var h = $('#tkAnonHint');
+      if (h) h.textContent = '会显示你的名字：' + ((ME && (ME.name || ME.user)) || '同学');
+    }
+
+    $('#tkPick').addEventListener('click', pick);
+    $('#tkSend').addEventListener('click', function () {
+      var target = ($('#tkTarget').value || '').trim();
+      var text = ($('#tkText').value || '').trim();
+      if (text.length < K.min) { toast('说明至少 ' + K.min + ' 个字'); return; }
       var btn = this;
       btn.disabled = true; btn.textContent = '提 交 中…';
-      api('/api/reports', {
+      api('/api/tickets', {
         method: 'POST',
-        body: { target_type: type, target_id: target, target_name: target, reason: reason, images: imgs.slice() }
+        body: { kind: kind, type: type, target: target, text: text, images: imgs.slice(), anonymous: anonOn }
       }).then(function () {
         C74Sheet.close();
-        toast('已提交，等待两位高管审核');
+        toast(anonOn ? K.done + '（匿名）' : K.done);
       }).catch(function (e) {
-        btn.disabled = false; btn.textContent = '提 交 举 报';
+        btn.disabled = false; btn.textContent = K.btn;
         toast(e.message || '提交失败');
       });
     });
   }
-
-  function $$(q, r) { return Array.prototype.slice.call((r || document).querySelectorAll(q)); }
 
   function pick() {
     if (!picker) {
@@ -113,18 +161,18 @@
   }
 
   function thumbs() {
-    var box = $('#rpThumbs');
+    var box = $('#tkThumbs');
     if (!box) return;
     box.innerHTML = imgs.map(function (u, i) {
-      return '<span class="rp-th"><img src="' + u + '" alt=""><b data-rdel="' + i + '">×</b></span>';
+      return '<span class="rp-th"><img src="' + u + '" alt=""><b data-tdel="' + i + '">×</b></span>';
     }).join('');
-    $$('#rpThumbs [data-rdel]').forEach(function (b) {
+    $$('#tkThumbs [data-tdel]').forEach(function (b) {
       b.addEventListener('click', function () {
-        imgs.splice(parseInt(b.getAttribute('data-rdel'), 10), 1);
+        imgs.splice(parseInt(b.getAttribute('data-tdel'), 10), 1);
         thumbs();
       });
     });
-    var c = $('#rpCount');
+    var c = $('#tkCount');
     if (c) c.textContent = imgs.length ? imgs.length + ' / 2 张' : '未选择';
   }
 
@@ -148,61 +196,7 @@
     });
   }
 
-  /* ---------------- 审核面板（高管） ---------------- */
-  function openReview() {
-    if (!online()) { toast('离线状态看不了'); return; }
-    api('/api/reports').then(function (d) {
-      var list = (d.reports || []).filter(function (r) { return r.status === 'pending'; });
-      var html;
-      if (!list.length) {
-        html = '<div class="m-empty">没有待审的举报</div>';
-      } else {
-        html = list.map(function (r) {
-          var ap = (r.approvals || []).filter(function (a) { return a.action === 'ok'; });
-          var mine = (r.approvals || []).some(function (a) { return a.id === (ME && ME.id); });
-          var self = r.from_id === (ME && ME.id);
-          return '<div class="m-sec" data-rid="' + esc(r.id) + '">' +
-            '<div class="m-sec-h">' + esc(r.from_name) + ' 举报 · ' + esc(r.target_name || r.target_id) + '</div>' +
-            '<p class="rp-reason">' + esc(r.reason).replace(/\n/g, '<br>') + '</p>' +
-            (r.images && r.images.length
-              ? '<div class="rp-imgs">' + r.images.map(function (u) { return '<img src="' + u + '" alt="">'; }).join('') + '</div>'
-              : '') +
-            '<div class="rp-meta">已通过 ' + ap.length + ' / ' + (r.required || 2) +
-              ' · ' + esc(r.created_at || '').slice(0, 16).replace('T', ' ') + '</div>' +
-            (self
-              ? '<p class="m-note">这是你自己提交的，不能审。</p>'
-              : mine
-                ? '<p class="m-note">你已经投过票，等另一位高管。</p>'
-                : '<div class="m-act-row">' +
-                  '<button class="m-btn" data-rv="no">驳回</button>' +
-                  '<button class="m-btn solid" data-rv="ok">通过</button></div>') +
-            '</div>';
-        }).join('');
-      }
-      C74Sheet.open('举报审核', 'HIGH · 双人终审', html);
-
-      $$('[data-rv]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          var box = b.closest('[data-rid]');
-          var id = box.getAttribute('data-rid');
-          var act = b.getAttribute('data-rv');
-          b.disabled = true;
-          api('/api/reports/' + encodeURIComponent(id) + '/approve', { method: 'POST', body: { action: act } })
-            .then(function (res) {
-              if (res.status === 'pending') toast('已通过，等另一位高管确认（' + res.approvals + '/' + res.required + '）');
-              else if (res.status === 'ok') toast('终审通过，已通知郭老师');
-              else toast('已驳回');
-              openReview();
-            })
-            .catch(function (e) { b.disabled = false; toast(e.message || '操作失败'); });
-        });
-      });
-    }).catch(function (e) {
-      toast(e.message || '加载失败');
-    });
-  }
-
-  /* ---------------- 站内信弹窗 ---------------- */
+  /* ---------------- 站内信（提交后的通知） ---------------- */
   var lastInboxSig = '';
 
   function paintDot(n) {
@@ -257,10 +251,14 @@
     });
   }
 
-  /* ---------------- 入口 ---------------- */
-  /* 入口改由 tools.js 的「小工具」面板负责（点面板里的举报 → openForm） */
-
-  window.C74Report = { openForm: openForm, openReview: openReview, checkInbox: checkInbox };
+  /* ---------------- 对外 ---------------- */
+  window.C74Report = {
+    open: open,
+    openForm: function () { open('report'); },
+    openApply: function () { open('apply'); },
+    openNote: function () { open('note'); },
+    checkInbox: checkInbox
+  };
 
   setTimeout(function () { checkInbox(); }, 1500);
   setInterval(function () { checkInbox(); }, 60000);

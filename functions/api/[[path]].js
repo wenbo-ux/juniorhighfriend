@@ -47,8 +47,10 @@ async function handle(req, env) {
       if (path === '/api/code/check' && req.method === 'POST') return await checkCode(req, env, cors);
       if (path === '/api/account/update' && req.method === 'POST') return await updateAccount(req, env, cors);
       if (path === '/api/account/avatar' && req.method === 'POST') return await saveAvatar(req, env, cors);
-      if (path === '/api/reports' && req.method === 'GET') return await listReports(req, env, cors);
-      if (path === '/api/reports' && req.method === 'POST') return await createReport(req, env, cors);
+      if (path === '/api/tickets' && req.method === 'GET') return await listTickets(req, env, cors);
+      if (path === '/api/tickets' && req.method === 'POST') return await createTicket(req, env, cors);
+      const tk = path.match(/^\/api\/tickets\/([\w-]+)\/done$/);
+      if (tk && req.method === 'POST') return await doneTicket(req, env, cors, tk[1]);
 
       const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset|admin|restore)$/);
       if (am && req.method === 'POST') return await adminAccount(req, env, cors, am[1], am[2]);
@@ -82,12 +84,6 @@ async function handle(req, env) {
       if (path === '/api/points/name' && req.method === 'POST') return await setPointName(req, env, cors);
       if (path === '/api/points/score' && req.method === 'POST') return await addPointScore(req, env, cors);
       if (path === '/api/points/notice' && req.method === 'POST') return await setPointsNotice(req, env, cors);
-
-      const m = path.match(/^\/api\/reports\/([\w-]+)\/review$/);
-      if (m && req.method === 'POST') return await reviewReport(req, env, cors, m[1]);
-
-      const ap = path.match(/^\/api\/reports\/([\w-]+)\/approve$/);
-      if (ap && req.method === 'POST') return await approveReport(req, env, cors, ap[1]);
 
       if (path === '/api/inbox' && req.method === 'GET') return await listInbox(req, env, cors);
       const ib = path.match(/^\/api\/inbox\/([\w-]+)\/read$/);
@@ -295,115 +291,6 @@ async function members(req, env, cors) {
 }
 
 /* ---------------- 举报 ---------------- */
-async function listReports(req, env, cors) {
-  const u = await auth(req, env);
-  if (!u) return json({ error: '未登录' }, 401, cors);
-  const onlyMine = new URL(req.url).searchParams.get('mine') === '1';
-
-  let sql, binds;
-  if (u.level === 'high') {
-    sql = 'SELECT * FROM reports ORDER BY created_at DESC LIMIT 200';
-    binds = [];
-  } else if (onlyMine) {
-    sql = 'SELECT * FROM reports WHERE from_id = ? ORDER BY created_at DESC LIMIT 100';
-    binds = [u.id];
-  } else {
-    // 中管/普管：自己举报的 + 自己名下成员被举报的 + 自己处理过的
-    sql = `SELECT r.* FROM reports r
-             LEFT JOIN members m ON m.id = r.target_id AND r.target_type = 'member'
-            WHERE r.from_id = ? OR m.owner = ? OR r.handler_id = ?
-            ORDER BY r.created_at DESC LIMIT 100`;
-    binds = [u.id, u.id, u.id];
-  }
-
-  const { results } = await env.DB.prepare(sql).bind(...binds).all();
-  const list = (results || []).map(r => Object.assign({}, r, {
-    images: r.images ? JSON.parse(r.images) : [],
-    approvals: r.approvals ? JSON.parse(r.approvals) : []
-  }));
-  const pending = list.filter(r => r.status === 'pending').length;
-
-  return json({ ok: true, reports: list, pending }, 200, cors);
-}
-
-async function createReport(req, env, cors) {
-  const u = await auth(req, env);
-  if (!u) return json({ error: '未登录' }, 401, cors);
-
-  const body = await req.json().catch(() => ({}));
-  const reason = String(body.reason || '').trim();
-  if (reason.length < 4) return json({ error: '理由至少 4 个字' }, 400, cors);
-
-  let images = Array.isArray(body.images) ? body.images.slice(0, 2) : [];
-  images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
-  if (images.join('').length > 900000) return json({ error: '图片太大，换小一点或只放一张' }, 413, cors);
-
-  /* 通知对象：默认郭老师（可在 settings 里改 report_notify） */
-  let notifyName = '郭老师';
-  try {
-    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'report_notify'").first();
-    if (row && row.value) notifyName = row.value;
-  } catch (e) {}
-  const notifyAcc = await env.DB.prepare('SELECT id FROM accounts WHERE user = ? OR name = ?')
-    .bind(notifyName, notifyName).first();
-
-  const id = uid('r_');
-  await env.DB.prepare(
-    `INSERT INTO reports (id,from_id,from_name,from_level,target_type,target_id,target_name,reason,images,status,created_at,approvals,required,notify_account)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-  ).bind(id, u.id, u.name || u.user, u.level,
-    String(body.target_type || 'member'), String(body.target_id || ''), String(body.target_name || ''),
-    reason, JSON.stringify(images), 'pending', nowISO(), '[]', 2, notifyAcc ? notifyAcc.id : null).run();
-
-  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
-    .bind(uid('l_'), nowISO(), u.name || u.user, u.level, '提交举报：' + (body.target_name || body.target_id || '')).run();
-
-  /* 通知所有高管：有新举报待审 */
-  const highs = await env.DB.prepare(
-    "SELECT id FROM accounts WHERE level = 'high' AND deleted = 0 AND id <> ?"
-  ).bind(u.id).all();
-  for (const h of (highs.results || [])) {
-    await pushInbox(env, h.id, 'report', id, '有新举报待审',
-      (u.name || u.user) + ' 举报：' + (body.target_name || body.target_id || '') +
-      '\n理由：' + reason, []);
-  }
-
-  return json({ ok: true, id }, 200, cors);
-}
-
-async function reviewReport(req, env, cors, id) {
-  const u = await auth(req, env);
-  if (!u) return json({ error: '未登录' }, 401, cors);
-  if (!need(u, 'high')) return json({ error: '只有高管能审核举报' }, 403, cors);
-
-  const r = await env.DB.prepare('SELECT * FROM reports WHERE id = ?').bind(id).first();
-  if (!r) return json({ error: '举报不存在' }, 404, cors);
-
-  const body = await req.json().catch(() => ({}));
-  const action = body.action === 'ok' ? 'ok' : 'no';
-  const note = String(body.note || '').slice(0, 300);
-  const punish = String(body.punish || '').slice(0, 20);
-
-  await env.DB.prepare(
-    `UPDATE reports SET status=?, handler_id=?, handler_name=?, action=?, note=?, handled_at=? WHERE id=?`
-  ).bind(action, u.id, u.name || u.user, punish, note, nowISO(), id).run();
-
-  // 处罚落到成员表
-  if (action === 'ok' && r.target_type === 'member' && r.target_id && punish) {
-    if (punish === 'mute') {
-      await env.DB.prepare('UPDATE members SET muted = 1 WHERE id = ?').bind(r.target_id).run();
-    } else if (punish === 'ban') {
-      await env.DB.prepare('UPDATE members SET banned = 1 WHERE id = ?').bind(r.target_id).run();
-    }
-  }
-
-  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
-    .bind(uid('l_'), nowISO(), u.name || u.user, u.level,
-      (action === 'ok' ? '举报成立：' : '举报驳回：') + (r.target_name || r.target_id)).run();
-
-  return json({ ok: true }, 200, cors);
-}
-
 async function deletePost(req, env, cors, id) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
@@ -874,70 +761,95 @@ async function dropCode(req, env, cors, code) {
   return json({ ok: true }, 200, cors);
 }
 
-async function approveReport(req, env, cors, id) {
+/* ---------------- 举报 / 申请 / 报备（tickets） ----------------
+   任何登录同学都能提交，可以匿名；没有审核环节，直接送到老师那边的站内信。
+   kind: report（举报）/ apply（申请）/ note（报备）                       */
+const TICKET_LABEL = { report: '举报', apply: '申请', note: '报备' };
+
+async function notifyAccount(env) {
+  let name = '郭老师';
+  try {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'report_notify'").first();
+    if (row && row.value) name = row.value;
+  } catch (e) {}
+  return await env.DB.prepare('SELECT id FROM accounts WHERE user = ? OR name = ?')
+    .bind(name, name).first();
+}
+
+async function createTicket(req, env, cors) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
-  if (!need(u, 'high')) return json({ error: '只有高管能审核举报' }, 403, cors);
-
-  const r = await env.DB.prepare('SELECT * FROM reports WHERE id = ?').bind(id).first();
-  if (!r) return json({ error: '举报不存在' }, 404, cors);
-  if (r.from_id === u.id) return json({ error: '不能审核自己提交的举报' }, 403, cors);
-  if (r.status !== 'pending') return json({ error: '这条举报已经处理过了' }, 409, cors);
 
   const b = await req.json().catch(() => ({}));
-  const action = b.action === 'no' ? 'no' : 'ok';
-  const note = String(b.note || '').slice(0, 200);
+  const kind = TICKET_LABEL[b.kind] ? b.kind : 'report';
+  const type = String(b.type || 'other').slice(0, 20);
+  const target = String(b.target || '').trim().slice(0, 60);
+  const text = String(b.text || b.reason || '').trim();
+  const min = kind === 'report' ? 4 : 2;
+  if (text.length < min) return json({ error: '说明至少 ' + min + ' 个字' }, 400, cors);
 
-  let approvals = r.approvals ? JSON.parse(r.approvals) : [];
-  if (approvals.some(a => a.id === u.id)) return json({ error: '你已经投过票了' }, 409, cors);
+  let images = Array.isArray(b.images) ? b.images.slice(0, 2) : [];
+  images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
+  if (images.join('').length > 900000) return json({ error: '图片太大，换小一点或只放一张' }, 413, cors);
 
-  approvals.push({ id: u.id, name: u.name || u.user, at: nowISO(), action, note });
+  const anonymous = b.anonymous ? 1 : 0;
+  const id = uid('t_');
+  await env.DB.prepare(
+    `INSERT INTO tickets (id,kind,type,target,text,images,anonymous,from_id,from_name,status,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+  ).bind(id, kind, type, target, text, JSON.stringify(images), anonymous,
+    u.id, anonymous ? null : (u.name || u.user), 'new', nowISO()).run();
 
-  if (action === 'no') {
-    await env.DB.prepare(
-      "UPDATE reports SET status='no', approvals=?, handler_id=?, handler_name=?, note=?, handled_at=?, decided_at=? WHERE id=?"
-    ).bind(JSON.stringify(approvals), u.id, u.name || u.user, note, nowISO(), nowISO(), id).run();
-    await pushInbox(env, r.from_id, 'report', id, '举报未通过',
-      '你提交的举报「' + (r.target_name || r.target_id) + '」未通过审核。' + (note ? '说明：' + note : ''), []);
-    return json({ ok: true, status: 'no', approvals: approvals.length }, 200, cors);
+  await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
+    .bind(uid('l_'), nowISO(), u.name || u.user, u.level,
+      '提交' + TICKET_LABEL[kind] + (anonymous ? '（匿名）' : '')).run();
+
+  const acc = await notifyAccount(env);
+  if (acc && acc.id) {
+    const who = anonymous ? '匿名同学' : (u.name || u.user);
+    await pushInbox(env, acc.id, 'ticket', id,
+      '收到一条' + TICKET_LABEL[kind],
+      who + ' · ' + type + (target ? ' · ' + target : '') + '\n' + text,
+      images);
   }
 
-  const need2 = r.required || 2;
-  if (approvals.filter(a => a.action === 'ok').length >= need2) {
-    await env.DB.prepare(
-      "UPDATE reports SET status='ok', approvals=?, handler_id=?, handler_name=?, note=?, handled_at=?, decided_at=? WHERE id=?"
-    ).bind(JSON.stringify(approvals), u.id, u.name || u.user, note, nowISO(), nowISO(), id).run();
+  return json({ ok: true, id }, 200, cors);
+}
 
-    /* 终审通过 → 送到郭老师那边 */
-    const who = r.notify_account;
-    if (who) {
-      await pushInbox(env, who, 'report', id,
-        '举报已通过，请处理',
-        '举报对象：' + (r.target_name || r.target_id) +
-        '\n理由：' + r.reason +
-        (note ? '\n审核备注：' + note : '') +
-        '\n提交人：' + (r.from_name || '—'),
-        r.images ? JSON.parse(r.images) : []);
-    }
-    await pushInbox(env, r.from_id, 'report', id, '举报已通过',
-      '你提交的举报「' + (r.target_name || r.target_id) + '」已通过终审，正在处理中。', []);
+async function listTickets(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
 
-    return json({ ok: true, status: 'ok', approvals: approvals.length }, 200, cors);
-  }
+  const url = new URL(req.url);
+  const kind = url.searchParams.get('kind');
+  const mineOnly = url.searchParams.get('mine') === '1' || !need(u, 'mid');
 
-  await env.DB.prepare('UPDATE reports SET approvals=? WHERE id=?')
-    .bind(JSON.stringify(approvals), id).run();
+  let sql = 'SELECT * FROM tickets';
+  const where = [], binds = [];
+  if (kind && TICKET_LABEL[kind]) { where.push('kind = ?'); binds.push(kind); }
+  if (mineOnly) { where.push('from_id = ?'); binds.push(u.id); }
+  if (where.length) sql += ' WHERE ' + where.join(' AND ');
+  sql += ' ORDER BY created_at DESC LIMIT 100';
 
-  const others = await env.DB.prepare(
-    "SELECT id FROM accounts WHERE level = 'high' AND deleted = 0 AND id <> ?"
-  ).bind(u.id).all();
-  for (const o of (others.results || [])) {
-    await pushInbox(env, o.id, 'report', id, '有一条举报等你终审',
-      (u.name || u.user) + ' 已通过：' + (r.target_name || r.target_id) +
-      '\n还需要你再确认一次。', []);
-  }
+  const { results } = await env.DB.prepare(sql).bind(...binds).all();
+  const list = (results || []).map(r => Object.assign({}, r, {
+    images: r.images ? JSON.parse(r.images) : [],
+    from_name: r.anonymous ? '匿名' : (r.from_name || '同学')
+  }));
+  return json({ ok: true, tickets: list, pending: list.filter(t => t.status === 'new').length }, 200, cors);
+}
 
-  return json({ ok: true, status: 'pending', approvals: approvals.length, required: need2 }, 200, cors);
+async function doneTicket(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!need(u, 'mid')) return json({ error: '没有权限' }, 403, cors);
+
+  const t = await env.DB.prepare('SELECT id,status FROM tickets WHERE id = ?').bind(id).first();
+  if (!t) return json({ error: '不存在' }, 404, cors);
+
+  await env.DB.prepare("UPDATE tickets SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ?")
+    .bind(u.name || u.user, nowISO(), id).run();
+  return json({ ok: true }, 200, cors);
 }
 
 async function pushInbox(env, accountId, type, refId, title, body, images) {

@@ -1032,7 +1032,6 @@
       '<div class="m-act-row"><button class="m-btn solid" id="acSave">保 存 修 改</button></div>' +
       (u.level === 'high'
         ? '<div class="m-sec"><div class="m-sec-h">管理员</div><div class="m-act-row">' +
-          '<button class="m-btn" id="acReview">举报审核</button>' +
           '<button class="m-btn" id="acCodes">注册码管理</button></div></div>'
         : '') +
       '<p class="m-note">改密码后，其它设备上的登录会失效，需要重新登录。改昵称只影响以后显示的内容。</p>';
@@ -1076,11 +1075,6 @@
 
     var acBtn = $('#acCodes');
     if (acBtn) acBtn.addEventListener('click', function () { openCodes(); });
-    var rvBtn = $('#acReview');
-    if (rvBtn) rvBtn.addEventListener('click', function () {
-      if (window.C74Report) window.C74Report.openReview();
-      else toast('举报模块还没加载完');
-    });
 
     $('#acSave').addEventListener('click', function () {
       var name = ($('#acName').value || '').trim();
