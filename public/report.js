@@ -258,8 +258,7 @@
   }
 
   /* ---------------- 入口 ---------------- */
-  var toolsBtn = document.getElementById('toolsBtn');
-  if (toolsBtn) toolsBtn.addEventListener('click', openForm);
+  /* 入口改由 tools.js 的「小工具」面板负责（点面板里的举报 → openForm） */
 
   window.C74Report = { openForm: openForm, openReview: openReview, checkInbox: checkInbox };
 

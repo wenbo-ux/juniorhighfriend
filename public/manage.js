@@ -1143,6 +1143,35 @@
     });
   }
 
+  /* 复制到剪贴板：优先 Clipboard API，失败退回 textarea + execCommand */
+  function copyText(text) {
+    function fallback() {
+      return new Promise(function (res, rej) {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, text.length);
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        ok ? res() : rej(new Error('copy failed'));
+      });
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(fallback);
+    }
+    return fallback();
+  }
+  function flashCopied(btn, label) {
+    var old = btn.textContent;
+    btn.textContent = label || '已复制';
+    btn.classList.add('done');
+    setTimeout(function () { btn.textContent = old; btn.classList.remove('done'); }, 1600);
+  }
+
   function renderCodes(d) {
     var groups = (d.groups || []).map(function (g) {
       return '<span class="cd-chip">' + esc(g.batch || '未分组') + ' <b>' + g.used + '/' + g.total + '</b></span>';
@@ -1151,6 +1180,7 @@
     var rows = (d.codes || []).map(function (c) {
       return '<div class="cd-row">' +
         '<span class="cd-code' + (c.used ? ' used' : '') + '">' + esc(c.code) + '</span>' +
+        (c.used ? '' : '<button class="cd-cp" data-ccp="' + esc(c.code) + '">复制</button>') +
         '<span class="cd-tag ' + (c.used ? 'no' : 'ok') + '">' + (c.used ? '已用' : '可用') + '</span>' +
         '<span class="cd-tag" style="color:#7c8ba6;background:none;border:1px solid rgba(120,185,255,.14)">' + esc(c.batch || '未分组') + '</span>' +
         (c.used ? '' : '<button class="cd-del" data-cdel="' + esc(c.code) + '" aria-label="删除">×</button>') +
@@ -1161,7 +1191,8 @@
       '<div class="m-sec"><div class="m-sec-h">概况</div>' +
         '<p class="m-note" style="margin-top:0">共 ' + d.total + ' 个 · 已用 ' + d.used +
         ' · 可用 ' + (d.total - d.used) + '</p>' +
-        '<div class="cd-group">' + groups + '</div></div>' +
+        '<div class="cd-group">' + groups + '</div>' +
+        '<div class="m-act-row"><button class="m-btn" id="cgCopyAll">复 制 全 部 可 用</button></div></div>' +
 
       '<div class="m-sec"><div class="m-sec-h">生成新码</div>' +
         '<div class="m-act-row">' +
@@ -1187,6 +1218,30 @@
           toast(err.message || '生成失败');
           openCodes();
         });
+    });
+
+    $$('[data-ccp]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var code = b.getAttribute('data-ccp');
+        copyText(code).then(function () {
+          flashCopied(b);
+          toast(code + ' 已复制');
+        }).catch(function () {
+          toast('复制失败，长按选中注册码手动复制');
+        });
+      });
+    });
+
+    var copyAll = $('#cgCopyAll');
+    if (copyAll) copyAll.addEventListener('click', function () {
+      var list = (d.codes || []).filter(function (c) { return !c.used; }).map(function (c) { return c.code; });
+      if (!list.length) { toast('现在没有可用的码'); return; }
+      copyText(list.join('\n')).then(function () {
+        flashCopied(copyAll, '已复制 ' + list.length + ' 个');
+        toast('已复制 ' + list.length + ' 个可用注册码');
+      }).catch(function () {
+        toast('复制失败，请手动选择');
+      });
     });
 
     $$('[data-cdel]').forEach(function (b) {

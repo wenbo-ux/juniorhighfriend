@@ -1,0 +1,30 @@
+/* ---------- 小工具面板 ---------- */
+.tl-intro{font-size:12.5px;line-height:1.7;color:#8194b2;margin:0 0 12px}
+.tl-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+.tl-item{
+  position:relative;display:flex;flex-direction:column;gap:5px;
+  padding:13px 12px 12px;border-radius:14px;text-align:left;
+  border:1px solid rgba(120,185,255,.16);background:rgba(12,21,36,.66);
+  font:inherit;color:#e7f0fd;
+}
+.tl-item:active{transform:scale(.975)}
+.tl-ic{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;margin-bottom:3px;
+  border:1px solid rgba(95,227,255,.28);background:rgba(95,227,255,.1)}
+.tl-ic svg{width:16px;height:16px;stroke:#5fe3ff;fill:none;stroke-width:1.7;
+  stroke-linecap:round;stroke-linejoin:round}
+.tl-item.warn .tl-ic{border-color:rgba(255,95,122,.3);background:rgba(255,95,122,.1)}
+.tl-item.warn .tl-ic svg{stroke:#ff8a9e}
+.tl-name{font-size:13.5px;letter-spacing:.03em}
+.tl-desc{font-size:10.5px;color:#5f7291;letter-spacing:.04em}
+.tl-item.off{opacity:.5}
+.tl-item.off .tl-ic{border-color:rgba(120,185,255,.18);background:rgba(255,255,255,.03)}
+.tl-item.off .tl-ic svg{stroke:#7c8ba6}
+.tl-tag{position:absolute;top:10px;right:10px;font-size:9px;letter-spacing:.08em;
+  padding:3px 6px;border-radius:6px;color:#7c8ba6;border:1px solid rgba(120,185,255,.16)}
+.tl-foot{font-size:11px;color:#4d5e7a;line-height:1.7;margin:14px 0 2px;text-align:center}
+
+/* 注册码复制 */
+.cd-cp{font-size:11px;letter-spacing:.04em;color:#5fe3ff;padding:3px 8px;border-radius:7px;
+  border:1px solid rgba(95,227,255,.3);background:rgba(95,227,255,.08);white-space:nowrap}
+.cd-cp:active{transform:scale(.94)}
+.cd-cp.done{color:#8ef0b8;border-color:rgba(142,240,184,.35);background:rgba(142,240,184,.1)}
