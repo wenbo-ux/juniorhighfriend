@@ -1190,12 +1190,14 @@
         '</div>';
     }).join('') || '<p class="m-note">还没有注册码</p>';
 
+    var avail = (d.codes || []).filter(function (c) { return !c.used; }).map(function (c) { return c.code; });
+
     var html =
       '<div class="m-sec"><div class="m-sec-h">概况</div>' +
         '<p class="m-note" style="margin-top:0">共 ' + d.total + ' 个 · 已用 ' + d.used +
         ' · 可用 ' + (d.total - d.used) + '</p>' +
         '<div class="cd-group">' + groups + '</div>' +
-        '<div class="m-act-row"><button class="m-btn" id="cgCopyAll">复 制 全 部 可 用</button></div></div>' +
+        '<div class="m-act-row"><button class="m-btn solid" id="cgCopyAll">复 制 全 部 可 用（' + avail.length + '）</button></div></div>' +
 
       '<div class="m-sec"><div class="m-sec-h">生成新码</div>' +
         '<div class="m-act-row">' +
@@ -1205,7 +1207,10 @@
         '<div class="m-act-row"><button class="m-btn solid" id="cgMake">生 成</button></div>' +
         '<p class="m-note">生成后自动分到该组；同组的码在列表里会挨着显示。</p></div>' +
 
-      '<div class="m-sec"><div class="m-sec-h">全部注册码</div>' + rows + '</div>';
+      '<div class="m-sec"><div class="m-sec-h">全部注册码</div>' + rows +
+        '<div class="m-act-row" style="margin-top:10px">' +
+          '<button class="m-btn" id="cgCopyAll2">复 制 全 部 可 用 码（' + avail.length + '）</button>' +
+        '</div></div>';
 
     openSheet('注册码管理', 'HIGH · INVITE CODES', html);
 
@@ -1235,16 +1240,18 @@
       });
     });
 
-    var copyAll = $('#cgCopyAll');
-    if (copyAll) copyAll.addEventListener('click', function () {
-      var list = (d.codes || []).filter(function (c) { return !c.used; }).map(function (c) { return c.code; });
-      if (!list.length) { toast('现在没有可用的码'); return; }
-      copyText(list.join('\n')).then(function () {
-        flashCopied(copyAll, '已复制 ' + list.length + ' 个');
-        toast('已复制 ' + list.length + ' 个可用注册码');
+    function copyAllCodes(btn) {
+      if (!avail.length) { toast('现在没有可用的码'); return; }
+      copyText(avail.join('\n')).then(function () {
+        flashCopied(btn, '已复制 ' + avail.length + ' 个');
+        toast('已复制 ' + avail.length + ' 个可用注册码，可以直接粘贴发送');
       }).catch(function () {
         toast('复制失败，请手动选择');
       });
+    }
+    ['#cgCopyAll', '#cgCopyAll2'].forEach(function (sel) {
+      var b = $(sel);
+      if (b) b.addEventListener('click', function () { copyAllCodes(b); });
     });
 
     $$('[data-cdel]').forEach(function (b) {
