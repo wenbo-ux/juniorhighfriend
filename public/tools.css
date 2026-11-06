@@ -28,3 +28,7 @@
   border:1px solid rgba(95,227,255,.3);background:rgba(95,227,255,.08);white-space:nowrap}
 .cd-cp:active{transform:scale(.94)}
 .cd-cp.done{color:#8ef0b8;border-color:rgba(142,240,184,.35);background:rgba(142,240,184,.1)}
+
+/* 待处理（只有有权限的账号看得到） */
+.tl-item.queue .tl-ic{border-color:rgba(255,182,72,.32);background:rgba(255,182,72,.1)}
+.tl-item.queue .tl-ic svg{stroke:#ffb648}

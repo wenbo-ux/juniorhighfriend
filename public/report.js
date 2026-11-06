@@ -196,6 +196,59 @@
     });
   }
 
+  /* ---------------- 待处理队列（有权限的账号才看得到） ---------------- */
+  function openReview() {
+    if (!online()) { toast('离线上看不了'); return; }
+    api('/api/tickets').then(function (d) {
+      var list = (d.tickets || []).filter(function (t) { return t.status === 'pending'; });
+      var html;
+      if (!list.length) {
+        html = '<div class="m-empty">都处理完了</div>';
+      } else {
+        html = '<p class="tk-intro">确认过之后再往下走，两个人看过才算数。</p>' +
+          list.map(function (t) {
+            var mine = (t.approvals || []).some(function (a) { return a.id === (ME && ME.id); });
+            var oks = (t.approvals || []).filter(function (a) { return a.action === 'ok'; }).length;
+            return '<div class="m-sec" data-tid="' + esc(t.id) + '">' +
+              '<div class="m-sec-h">' + esc(KINDS[t.kind] ? KINDS[t.kind].title : '提交') +
+                ' · ' + esc(t.from_name) + (t.target ? ' · ' + esc(t.target) : '') + '</div>' +
+              '<p class="rp-reason">' + esc(t.text).replace(/\n/g, '<br>') + '</p>' +
+              (t.images && t.images.length
+                ? '<div class="rp-imgs">' + t.images.map(function (u) { return '<img src="' + u + '" alt="">'; }).join('') + '</div>'
+                : '') +
+              '<div class="rp-meta">' + esc(String(t.created_at || '').slice(0, 16).replace('T', ' ')) +
+                ' · 已通过 ' + oks + ' / 2</div>' +
+              (mine
+                ? '<p class="m-note">你已经看过了，等另一位确认。</p>'
+                : '<div class="m-act-row">' +
+                  '<button class="m-btn" data-tv="no">驳 回</button>' +
+                  '<button class="m-btn solid" data-tv="ok">通 过</button></div>') +
+            '</div>';
+          }).join('');
+      }
+      C74Sheet.open('待处理', 'QUEUE', html);
+
+      $$('[data-tv]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var box = b.closest('[data-tid]');
+          var id = box.getAttribute('data-tid');
+          var act = b.getAttribute('data-tv');
+          b.disabled = true;
+          api('/api/tickets/' + encodeURIComponent(id) + '/vote', { method: 'POST', body: { action: act } })
+            .then(function (res) {
+              if (res.status === 'pending') toast('记下了，等另一位确认（' + res.approvals + '/' + res.required + '）');
+              else if (res.status === 'ok') toast('已处理');
+              else toast('已驳回');
+              openReview();
+            })
+            .catch(function (e) { b.disabled = false; toast(e.message || '操作失败'); });
+        });
+      });
+    }).catch(function (e) {
+      toast(e.message || '加载失败');
+    });
+  }
+
   /* ---------------- 站内信（提交后的通知） ---------------- */
   var lastInboxSig = '';
 
@@ -254,6 +307,7 @@
   /* ---------------- 对外 ---------------- */
   window.C74Report = {
     open: open,
+    openReview: openReview,
     openForm: function () { open('report'); },
     openApply: function () { open('apply'); },
     openNote: function () { open('note'); },

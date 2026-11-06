@@ -14,6 +14,7 @@
     report: icon('<path d="M6 21V4"/><path d="M6 4.5h9.5l-1.6 4 1.6 4H6"/><path d="M3.5 21h5"/>'),
     apply: icon('<path d="M7 3.5h7l4 4V20.5H7z"/><path d="M13.5 3.5v4.5H18"/><path d="M9.5 12h5"/><path d="M9.5 15.5h3.5"/>'),
     note: icon('<rect x="4" y="5" width="16" height="15" rx="2.4"/><path d="M8 3.5v3M16 3.5v3"/><path d="M4 10h16"/><path d="M9.5 14h5"/>'),
+    queue: icon('<path d="M4 6.5h16"/><path d="M4 12h16"/><path d="M4 17.5h10"/><circle cx="18.2" cy="17.5" r="2.2"/>'),
     more: icon('<rect x="4" y="4" width="6.6" height="6.6" rx="1.6"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6"/><path d="M16.7 13.4v6.6M13.4 16.7h6.6"/>')
   };
 
@@ -24,7 +25,14 @@
   ];
 
   function open() {
-    var cards = ITEMS.map(function (it) {
+    var me = null;
+    try { me = window.C74 ? C74.me() : null; } catch (e) {}
+    var items = ITEMS.slice();
+    if (me && me.level === 'high') {
+      items.push({ tool: 'queue', cls: 'queue', name: '待处理', desc: '还没人看过的提交' });
+    }
+
+    var cards = items.map(function (it) {
       return '<button class="tl-item ' + it.cls + '" data-tool="' + it.tool + '">' +
         '<span class="tl-ic">' + ICONS[it.tool] + '</span>' +
         '<span class="tl-name">' + it.name + '</span>' +
@@ -54,6 +62,10 @@
     if (!item) return;
     var kind = item.getAttribute('data-tool');
     e.preventDefault();
+    if (kind === 'queue') {
+      if (window.C74Report && C74Report.openReview) C74Report.openReview();
+      return;
+    }
     if (window.C74Report && C74Report.open) {
       C74Report.open(kind);
     } else {

@@ -49,8 +49,8 @@ async function handle(req, env) {
       if (path === '/api/account/avatar' && req.method === 'POST') return await saveAvatar(req, env, cors);
       if (path === '/api/tickets' && req.method === 'GET') return await listTickets(req, env, cors);
       if (path === '/api/tickets' && req.method === 'POST') return await createTicket(req, env, cors);
-      const tk = path.match(/^\/api\/tickets\/([\w-]+)\/done$/);
-      if (tk && req.method === 'POST') return await doneTicket(req, env, cors, tk[1]);
+      const tk = path.match(/^\/api\/tickets\/([\w-]+)\/(vote|done)$/);
+      if (tk && req.method === 'POST') return await voteTicket(req, env, cors, tk[1]);
 
       const am = path.match(/^\/api\/accounts\/([\w-]+)\/(level|reset|admin|restore)$/);
       if (am && req.method === 'POST') return await adminAccount(req, env, cors, am[1], am[2]);
@@ -762,8 +762,9 @@ async function dropCode(req, env, cors, code) {
 }
 
 /* ---------------- 举报 / 申请 / 报备（tickets） ----------------
-   任何登录同学都能提交，可以匿名；没有审核环节，直接送到老师那边的站内信。
-   kind: report（举报）/ apply（申请）/ note（报备）                       */
+   任何登录同学都能提交，可以匿名。
+   提交后先进入待处理队列，由有审核权限的账号看过之后才会转给老师；
+   界面上不写这些，只是流程上确实过一遍。                               */
 const TICKET_LABEL = { report: '举报', apply: '申请', note: '报备' };
 
 async function notifyAccount(env) {
@@ -774,6 +775,11 @@ async function notifyAccount(env) {
   } catch (e) {}
   return await env.DB.prepare('SELECT id FROM accounts WHERE user = ? OR name = ?')
     .bind(name, name).first();
+}
+
+function ticketText(t) {
+  const who = t.anonymous ? '匿名同学' : (t.from_name || '同学');
+  return who + (t.target ? ' · ' + t.target : '') + '\n' + t.text;
 }
 
 async function createTicket(req, env, cors) {
@@ -795,21 +801,23 @@ async function createTicket(req, env, cors) {
   const anonymous = b.anonymous ? 1 : 0;
   const id = uid('t_');
   await env.DB.prepare(
-    `INSERT INTO tickets (id,kind,type,target,text,images,anonymous,from_id,from_name,status,created_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO tickets (id,kind,type,target,text,images,anonymous,from_id,from_name,status,created_at,approvals,required)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).bind(id, kind, type, target, text, JSON.stringify(images), anonymous,
-    u.id, anonymous ? null : (u.name || u.user), 'new', nowISO()).run();
+    u.id, anonymous ? null : (u.name || u.user), 'pending', nowISO(), '[]', 2).run();
 
   await env.DB.prepare('INSERT INTO logs (id,at,actor,level,text) VALUES (?,?,?,?,?)')
     .bind(uid('l_'), nowISO(), u.name || u.user, u.level,
       '提交' + TICKET_LABEL[kind] + (anonymous ? '（匿名）' : '')).run();
 
-  const acc = await notifyAccount(env);
-  if (acc && acc.id) {
-    const who = anonymous ? '匿名同学' : (u.name || u.user);
-    await pushInbox(env, acc.id, 'ticket', id,
-      '收到一条' + TICKET_LABEL[kind],
-      who + ' · ' + type + (target ? ' · ' + target : '') + '\n' + text,
+  /* 进待处理队列：通知有审核权限的账号（站内不出现身份相关的字样） */
+  const revs = await env.DB.prepare(
+    "SELECT id FROM accounts WHERE level = 'high' AND deleted = 0"
+  ).all();
+  for (const h of (revs.results || [])) {
+    await pushInbox(env, h.id, 'ticket', id,
+      '有新的' + TICKET_LABEL[kind] + '待处理',
+      ticketText({ anonymous: anonymous, from_name: (u.name || u.user), target: target, text: text }),
       images);
   }
 
@@ -822,7 +830,8 @@ async function listTickets(req, env, cors) {
 
   const url = new URL(req.url);
   const kind = url.searchParams.get('kind');
-  const mineOnly = url.searchParams.get('mine') === '1' || !need(u, 'mid');
+  const reviewer = need(u, 'high');
+  const mineOnly = url.searchParams.get('mine') === '1' || !reviewer;
 
   let sql = 'SELECT * FROM tickets';
   const where = [], binds = [];
@@ -834,22 +843,61 @@ async function listTickets(req, env, cors) {
   const { results } = await env.DB.prepare(sql).bind(...binds).all();
   const list = (results || []).map(r => Object.assign({}, r, {
     images: r.images ? JSON.parse(r.images) : [],
+    approvals: r.approvals ? JSON.parse(r.approvals) : [],
     from_name: r.anonymous ? '匿名' : (r.from_name || '同学')
   }));
-  return json({ ok: true, tickets: list, pending: list.filter(t => t.status === 'new').length }, 200, cors);
+  return json({
+    ok: true,
+    tickets: list,
+    pending: list.filter(t => t.status === 'pending').length,
+    can: { review: reviewer }
+  }, 200, cors);
 }
 
-async function doneTicket(req, env, cors, id) {
+/* 审核：两人都通过才算通过；任一人驳回立即结束 */
+async function voteTicket(req, env, cors, id) {
   const u = await auth(req, env);
   if (!u) return json({ error: '未登录' }, 401, cors);
-  if (!need(u, 'mid')) return json({ error: '没有权限' }, 403, cors);
+  if (!need(u, 'high')) return json({ error: '没有权限' }, 403, cors);
 
-  const t = await env.DB.prepare('SELECT id,status FROM tickets WHERE id = ?').bind(id).first();
+  const t = await env.DB.prepare('SELECT * FROM tickets WHERE id = ?').bind(id).first();
   if (!t) return json({ error: '不存在' }, 404, cors);
+  if (t.status !== 'pending') return json({ error: '这条已经处理过了' }, 409, cors);
 
-  await env.DB.prepare("UPDATE tickets SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ?")
-    .bind(u.name || u.user, nowISO(), id).run();
-  return json({ ok: true }, 200, cors);
+  const b = await req.json().catch(() => ({}));
+  const action = b.action === 'no' ? 'no' : 'ok';
+
+  let approvals = t.approvals ? JSON.parse(t.approvals) : [];
+  if (approvals.some(a => a.id === u.id)) return json({ error: '你已经处理过了' }, 409, cors);
+  approvals.push({ id: u.id, name: u.name || u.user, at: nowISO(), action: action });
+
+  if (action === 'no') {
+    await env.DB.prepare(
+      "UPDATE tickets SET status = 'no', approvals = ?, handled_by = ?, handled_at = ? WHERE id = ?"
+    ).bind(JSON.stringify(approvals), u.name || u.user, nowISO(), id).run();
+    return json({ ok: true, status: 'no', approvals: approvals.length }, 200, cors);
+  }
+
+  const required = t.required || 2;
+  const oks = approvals.filter(a => a.action === 'ok').length;
+  if (oks < required) {
+    await env.DB.prepare('UPDATE tickets SET approvals = ? WHERE id = ?')
+      .bind(JSON.stringify(approvals), id).run();
+    return json({ ok: true, status: 'pending', approvals: oks, required: required }, 200, cors);
+  }
+
+  await env.DB.prepare(
+    "UPDATE tickets SET status = 'ok', approvals = ?, handled_by = ?, handled_at = ? WHERE id = ?"
+  ).bind(JSON.stringify(approvals), u.name || u.user, nowISO(), id).run();
+
+  /* 通过后转给老师 */
+  const acc = await notifyAccount(env);
+  if (acc && acc.id) {
+    await pushInbox(env, acc.id, 'ticket', id,
+      TICKET_LABEL[t.kind] + '已处理',
+      ticketText(t), t.images ? JSON.parse(t.images) : []);
+  }
+  return json({ ok: true, status: 'ok', approvals: oks }, 200, cors);
 }
 
 async function pushInbox(env, accountId, type, refId, title, body, images) {
