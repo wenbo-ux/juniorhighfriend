@@ -76,3 +76,11 @@
   font-size:19px;line-height:1;display:flex;align-items:center;justify-content:center;padding-bottom:2px}
 .pl-back:active{transform:scale(.94)}
 .pl-head h2{flex:1}
+.pl-form .multi-row{display:flex;align-items:center;justify-content:space-between;
+  margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:12px;
+  background:rgba(255,255,255,.03)}
+.pl-form .multi-row span{font-size:12.5px;color:#c3d3e8}
+.pl-form .tk-sw{width:46px;height:27px;border-radius:14px}
+.pl-form .tk-sw i{width:21px;height:21px}
+.pl-form .tk-sw[aria-pressed="true"] i{left:23px}
+.pl-form .tk-sw[aria-pressed="false"] i{left:2px}
