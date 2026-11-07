@@ -32,3 +32,5 @@
 /* 待处理（只有有权限的账号看得到） */
 .tl-item.queue .tl-ic{border-color:rgba(255,182,72,.32);background:rgba(255,182,72,.1)}
 .tl-item.queue .tl-ic svg{stroke:#ffb648}
+.tl-item.go .tl-ic{border-color:rgba(95,227,255,.34);background:rgba(95,227,255,.1)}
+.tl-item.go .tl-ic svg{stroke:var(--cyan)}

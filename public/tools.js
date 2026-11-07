@@ -15,6 +15,7 @@
     apply: icon('<path d="M7 3.5h7l4 4V20.5H7z"/><path d="M13.5 3.5v4.5H18"/><path d="M9.5 12h5"/><path d="M9.5 15.5h3.5"/>'),
     appeal: icon('<path d="M12 3.8l7.5 3.4v5.2c0 4.1-3.1 7.2-7.5 8.4-4.4-1.2-7.5-4.3-7.5-8.4V7.2z"/><path d="M12 9v3.4"/><path d="M12 15.2h.01"/>'),
     note: icon('<rect x="4" y="5" width="16" height="15" rx="2.4"/><path d="M8 3.5v3M16 3.5v3"/><path d="M4 10h16"/><path d="M9.5 14h5"/>'),
+    poll: icon('<path d="M5 5.5h14v13H5z"/><path d="M8.4 10.1l1.7 1.7 3.4-3.4"/><path d="M8.4 15.6h7.2"/>'),
     queue: icon('<path d="M4 6.5h16"/><path d="M4 12h16"/><path d="M4 17.5h10"/><circle cx="18.2" cy="17.5" r="2.2"/>'),
     more: icon('<rect x="4" y="4" width="6.6" height="6.6" rx="1.6"/><rect x="13.4" y="4" width="6.6" height="6.6" rx="1.6"/><rect x="4" y="13.4" width="6.6" height="6.6" rx="1.6"/><path d="M16.7 13.4v6.6M13.4 16.7h6.6"/>')
   };
@@ -23,7 +24,8 @@
     { tool: 'report', cls: 'warn', name: '举报', desc: '不合适的内容 · 可匿名' },
     { tool: 'apply', cls: '', name: '申请', desc: '请假 · 换座位 · 活动' },
     { tool: 'note', cls: '', name: '报备', desc: '迟到 · 生病 · 临时情况' },
-    { tool: 'appeal', cls: 'warn', name: '意见申诉', desc: '有异议 · 可匿名' }
+    { tool: 'appeal', cls: 'warn', name: '意见申诉', desc: '有异议 · 可匿名' },
+    { tool: 'poll', cls: 'go', name: '班级投票', desc: '一人一票 · 看结果' }
   ];
 
   function open() {
@@ -59,6 +61,12 @@
     if (!item) return;
     var kind = item.getAttribute('data-tool');
     e.preventDefault();
+    if (kind === 'poll') {
+      if (window.C74Sheet && C74Sheet.close) C74Sheet.close();
+      var tab = document.querySelector('.tab[data-tab="投票"]');
+      if (tab) tab.click();
+      return;
+    }
     if (window.C74Report && C74Report.open) {
       C74Report.open(kind);
     } else {

@@ -85,6 +85,15 @@ async function handle(req, env) {
       if (path === '/api/points/score' && req.method === 'POST') return await addPointScore(req, env, cors);
       if (path === '/api/points/notice' && req.method === 'POST') return await setPointsNotice(req, env, cors);
 
+      if (path === '/api/polls' && req.method === 'GET') return await listPolls(req, env, cors);
+      if (path === '/api/polls' && req.method === 'POST') return await createPoll(req, env, cors);
+      const pv = path.match(/^\/api\/polls\/([\w-]+)\/vote$/);
+      if (pv && req.method === 'POST') return await votePoll(req, env, cors, pv[1]);
+      const pc = path.match(/^\/api\/polls\/([\w-]+)\/(close|reopen)$/);
+      if (pc && req.method === 'POST') return await closePoll(req, env, cors, pc[1], pc[2] === 'reopen');
+      const pd = path.match(/^\/api\/polls\/([\w-]+)$/);
+      if (pd && req.method === 'DELETE') return await deletePoll(req, env, cors, pd[1]);
+
       if (path === '/api/inbox' && req.method === 'GET') return await listInbox(req, env, cors);
       const ib = path.match(/^\/api\/inbox\/([\w-]+)\/read$/);
       if (ib && req.method === 'POST') return await readInbox(req, env, cors, ib[1]);
@@ -903,6 +912,131 @@ async function voteTicket(req, env, cors, id) {
       ticketText(t), t.images ? JSON.parse(t.images) : []);
   }
   return json({ ok: true, status: 'ok', approvals: oks }, 200, cors);
+}
+
+/* ---------------- 班级投票 ---------------- */
+/* 只有郭老师和高管能出题，其他人只能投 */
+
+async function canCreatePoll(u) {
+  if (!u) return false;
+  if (u.level === 'high') return true;
+  return u.user === '郭老师' || u.name === '郭老师';
+}
+
+function parseOptions(raw) {
+  try { return JSON.parse(raw || '[]') || []; } catch (e) { return []; }
+}
+
+async function listPolls(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+
+  const { results: rows } = await env.DB.prepare(
+    'SELECT * FROM polls ORDER BY created_at DESC LIMIT 60'
+  ).all();
+  const { results: votes } = await env.DB.prepare(
+    'SELECT poll_id, account_id, choice FROM poll_votes'
+  ).all();
+
+  const byPoll = {};
+  for (const v of (votes || [])) {
+    const bucket = byPoll[v.poll_id] || (byPoll[v.poll_id] = { count: {}, mine: null, total: 0 });
+    let picks = [];
+    try { picks = JSON.parse(v.choice || '[]') || []; } catch (e) { picks = []; }
+    if (v.account_id === u.id) bucket.mine = picks;
+    bucket.total += 1;
+    for (const k of picks) bucket.count[k] = (bucket.count[k] || 0) + 1;
+  }
+
+  const polls = (rows || []).map(p => {
+    const agg = byPoll[p.id] || { count: {}, mine: null, total: 0 };
+    const opts = parseOptions(p.options).map(o => ({
+      k: o.k, label: o.label, count: agg.count[o.k] || 0
+    }));
+    return {
+      id: p.id, title: p.title, desc: p.desc || '',
+      options: opts, total: agg.total, multi: !!p.multi,
+      status: p.status || 'open',
+      created_name: p.created_name || '班委', created_at: p.created_at,
+      my: agg.mine,
+      canClose: (u.level === 'high' || p.created_by === u.id)
+    };
+  });
+
+  return json({ ok: true, polls, can: { create: await canCreatePoll(u) } }, 200, cors);
+}
+
+async function createPoll(req, env, cors) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  if (!(await canCreatePoll(u))) return json({ error: '只有郭老师和班委能发起投票' }, 403, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const title = String(b.title || '').trim().slice(0, 40);
+  const desc = String(b.desc || '').trim().slice(0, 200);
+  const labels = (Array.isArray(b.options) ? b.options : [])
+    .map(s => String(s || '').trim().slice(0, 24))
+    .filter(Boolean);
+  if (title.length < 2) return json({ error: '题目至少 2 个字' }, 400, cors);
+  if (labels.length < 2) return json({ error: '至少两个选项' }, 400, cors);
+  if (labels.length > 6) return json({ error: '最多六个选项' }, 400, cors);
+
+  const options = labels.map((label, i) => ({ k: 'o' + (i + 1), label }));
+  const id = uid('pl_');
+  await env.DB.prepare(
+    `INSERT INTO polls (id,title,desc,options,multi,status,created_by,created_name,created_at)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  ).bind(id, title, desc, JSON.stringify(options), b.multi ? 1 : 0, 'open',
+         u.id, u.name || u.user, nowISO()).run();
+
+  return json({ ok: true, id }, 200, cors);
+}
+
+async function votePoll(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+
+  const p = await env.DB.prepare('SELECT * FROM polls WHERE id = ?').bind(id).first();
+  if (!p) return json({ error: '投票不存在' }, 404, cors);
+  if ((p.status || 'open') !== 'open') return json({ error: '这个投票已经结束了' }, 400, cors);
+
+  const b = await req.json().catch(() => ({}));
+  const opts = parseOptions(p.options);
+  let picks = Array.isArray(b.choice) ? b.choice : [b.choice];
+  picks = picks.map(String).filter(k => opts.some(o => o.k === k));
+  picks = Array.from(new Set(picks));
+  if (!picks.length) return json({ error: '请选一个' }, 400, cors);
+  if (!p.multi && picks.length > 1) picks = picks.slice(0, 1);
+
+  await env.DB.prepare(
+    `INSERT INTO poll_votes (id,poll_id,account_id,choice,created_at) VALUES (?,?,?,?,?)
+     ON CONFLICT(poll_id,account_id) DO UPDATE SET choice = excluded.choice, created_at = excluded.created_at`
+  ).bind(uid('v_'), id, u.id, JSON.stringify(picks), nowISO()).run();
+
+  return json({ ok: true, choice: picks }, 200, cors);
+}
+
+async function closePoll(req, env, cors, id, reopen) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const p = await env.DB.prepare('SELECT * FROM polls WHERE id = ?').bind(id).first();
+  if (!p) return json({ error: '投票不存在' }, 404, cors);
+  if (!(u.level === 'high' || p.created_by === u.id)) return json({ error: '只有发起人能结束' }, 403, cors);
+
+  await env.DB.prepare('UPDATE polls SET status = ?, closed_at = ? WHERE id = ?')
+    .bind(reopen ? 'open' : 'closed', reopen ? null : nowISO(), id).run();
+  return json({ ok: true, status: reopen ? 'open' : 'closed' }, 200, cors);
+}
+
+async function deletePoll(req, env, cors, id) {
+  const u = await auth(req, env);
+  if (!u) return json({ error: '未登录' }, 401, cors);
+  const p = await env.DB.prepare('SELECT * FROM polls WHERE id = ?').bind(id).first();
+  if (!p) return json({ error: '投票不存在' }, 404, cors);
+  if (!(u.level === 'high' || p.created_by === u.id)) return json({ error: '只有发起人能删' }, 403, cors);
+  await env.DB.prepare('DELETE FROM poll_votes WHERE poll_id = ?').bind(id).run();
+  await env.DB.prepare('DELETE FROM polls WHERE id = ?').bind(id).run();
+  return json({ ok: true }, 200, cors);
 }
 
 async function pushInbox(env, accountId, type, refId, title, body, images) {

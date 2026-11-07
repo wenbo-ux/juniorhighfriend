@@ -1,0 +1,72 @@
+/* ---------- 班级投票 ---------- */
+.pl-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:2px 2px 14px}
+.pl-head h2{margin:0;font-size:20px;font-weight:650;letter-spacing:.06em}
+.pl-mk{font-size:11px;letter-spacing:.14em;color:var(--dim-2)}
+.pl-new{font-size:12px;color:var(--cyan);border:1px solid rgba(95,227,255,.34);
+  background:rgba(95,227,255,.09);border-radius:11px;padding:7px 13px;letter-spacing:.06em}
+.pl-new:active{transform:scale(.96)}
+
+/* 卡片 */
+.pl-card{border:1px solid var(--line);border-radius:16px;padding:14px 14px 12px;margin-bottom:12px;
+  background:linear-gradient(165deg,rgba(95,227,255,.055),rgba(160,140,255,.04) 55%,transparent)}
+.pl-card.closed{opacity:.86;background:none}
+.pl-top{display:flex;align-items:flex-start;gap:8px}
+.pl-title{font-size:15px;font-weight:600;line-height:1.45;color:#eaf2ff;flex:1;word-break:break-word}
+.pl-tag{flex:none;font-size:10px;letter-spacing:.1em;padding:3px 7px;border-radius:7px;
+  color:var(--dim-2);border:1px solid var(--line)}
+.pl-tag.open{color:var(--cyan);border-color:rgba(95,227,255,.3);background:rgba(95,227,255,.07)}
+.pl-desc{font-size:12px;line-height:1.65;color:#9fb2cc;margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.pl-meta{font-size:10.5px;color:var(--dim-2);letter-spacing:.04em;margin-top:8px}
+
+/* 选项 */
+.pl-opts{margin-top:11px;display:flex;flex-direction:column;gap:8px}
+.pl-opt{position:relative;border:1px solid var(--line);border-radius:12px;
+  padding:10px 12px;overflow:hidden;text-align:left;width:100%;background:rgba(255,255,255,.015)}
+.pl-opt .bar{position:absolute;left:0;top:0;bottom:0;width:0;
+  background:linear-gradient(90deg,rgba(95,227,255,.20),rgba(160,140,255,.16));
+  transition:width .45s cubic-bezier(.2,.8,.3,1)}
+.pl-opt .row{position:relative;display:flex;align-items:center;gap:8px}
+.pl-opt .lb{font-size:13px;color:#dce8fa;flex:1;word-break:break-word;line-height:1.4}
+.pl-opt .pc{font-size:11px;color:#8fa5c0;letter-spacing:.04em}
+.pl-opt.mine{border-color:rgba(95,227,255,.42)}
+.pl-opt.mine .lb{color:#eafaff}
+.pl-opt .mk{position:relative;flex:none;width:13px;height:13px;border-radius:50%;
+  border:1.5px solid rgba(255,255,255,.24)}
+.pl-opt.multi .mk{border-radius:4px}
+.pl-opt.mine .mk{border-color:var(--cyan);background:var(--cyan);box-shadow:0 0 0 3px rgba(95,227,255,.14)}
+.pl-opt.pickable:active{transform:scale(.985)}
+.pl-opt[disabled]{opacity:1;cursor:default}
+
+/* 底部操作 */
+.pl-acts{display:flex;gap:8px;margin-top:11px;flex-wrap:wrap}
+.pl-btn{font-size:11.5px;padding:7px 12px;border-radius:10px;letter-spacing:.06em;
+  border:1px solid var(--line);color:#a9bdd6;background:rgba(255,255,255,.03)}
+.pl-btn:active{transform:scale(.96)}
+.pl-btn.ok{color:var(--cyan);border-color:rgba(95,227,255,.35);background:rgba(95,227,255,.09)}
+.pl-btn.danger{color:#ff9a9a;border-color:rgba(255,120,120,.28);background:rgba(255,120,120,.07)}
+
+/* 空态 */
+.pl-empty{border:1px dashed var(--line);border-radius:16px;padding:34px 18px;text-align:center;
+  color:var(--dim-2);font-size:12.5px;line-height:1.9}
+
+/* 发起表单 */
+.pl-form{border:1px solid rgba(95,227,255,.24);border-radius:16px;padding:14px;margin-bottom:14px;
+  background:linear-gradient(165deg,rgba(95,227,255,.075),transparent)}
+.pl-form[hidden]{display:none}
+.pl-form .fl{font-size:10.5px;letter-spacing:.16em;color:var(--dim-2);margin:12px 0 6px}
+.pl-form .fl:first-child{margin-top:0}
+.pl-form input,.pl-form textarea{width:100%;box-sizing:border-box;padding:10px 12px;font-size:13.5px;
+  color:#e8f1ff;background:rgba(255,255,255,.045);border:1px solid var(--line);border-radius:11px;
+  font-family:inherit;outline:none;resize:vertical}
+.pl-form input:focus,.pl-form textarea:focus{border-color:rgba(95,227,255,.45);background:rgba(95,227,255,.06)}
+.pl-form .opt-row{display:flex;gap:8px;margin-bottom:7px}
+.pl-form .opt-row input{flex:1}
+.pl-form .del{flex:none;width:34px;border-radius:11px;border:1px solid var(--line);
+  background:rgba(255,255,255,.03);color:#8ba0bb;font-size:15px}
+.pl-form .add{font-size:11.5px;color:var(--violet);padding:5px 2px;letter-spacing:.06em}
+.pl-form .foot{display:flex;gap:8px;margin-top:14px}
+.pl-form .foot button{flex:1;padding:11px;border-radius:11px;font-size:13px;letter-spacing:.08em}
+.pl-form .cancel{border:1px solid var(--line);color:#9fb2cc;background:none}
+.pl-form .submit{border:none;color:#04121c;font-weight:600;
+  background:linear-gradient(120deg,#5fe3ff,#a08cff)}
+.pl-form .submit[disabled]{opacity:.5}
