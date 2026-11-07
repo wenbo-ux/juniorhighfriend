@@ -84,3 +84,4 @@
 .pl-form .tk-sw i{width:21px;height:21px}
 .pl-form .tk-sw[aria-pressed="true"] i{left:23px}
 .pl-form .tk-sw[aria-pressed="false"] i{left:2px}
+.pl-form .tk-sw,.pl-form .tk-sw i{transition:none !important}
