@@ -63,8 +63,7 @@
     e.preventDefault();
     if (kind === 'poll') {
       if (window.C74Sheet && C74Sheet.close) C74Sheet.close();
-      var tab = document.querySelector('.tab[data-tab="投票"]');
-      if (tab) tab.click();
+      if (window.C74Polls && C74Polls.open) C74Polls.open();
       return;
     }
     if (window.C74Report && C74Report.open) {

@@ -70,3 +70,9 @@
 .pl-form .submit{border:none;color:#04121c;font-weight:600;
   background:linear-gradient(120deg,#5fe3ff,#a08cff)}
 .pl-form .submit[disabled]{opacity:.5}
+.pl-head{position:relative}
+.pl-back{flex:none;width:30px;height:30px;margin-right:2px;border-radius:10px;
+  border:1px solid var(--line);background:rgba(255,255,255,.03);color:#9fb2cc;
+  font-size:19px;line-height:1;display:flex;align-items:center;justify-content:center;padding-bottom:2px}
+.pl-back:active{transform:scale(.94)}
+.pl-head h2{flex:1}

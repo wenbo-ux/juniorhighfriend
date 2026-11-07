@@ -309,7 +309,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 <link rel="stylesheet" href="upload.css?v=5">
 <link rel="stylesheet" href="report.css?v=4">
 <link rel="stylesheet" href="points.css?v=1">
-<link rel="stylesheet" href="polls.css?v=1">
+<link rel="stylesheet" href="polls.css?v=2">
 <link rel="stylesheet" href="tools.css?v=2">
 </head>
 <body>
@@ -452,6 +452,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 
 <section class="pview" id="pollsView" hidden>
   <div class="pl-head">
+    <button class="pl-back" id="plBack" aria-label="返回">‹</button>
     <h2>班级投票</h2>
     <span class="pl-mk" id="plMk">—</span>
     <button class="pl-new" id="plNewBtn" hidden>＋ 发起投票</button>
@@ -486,10 +487,6 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
     <button class="tab" data-tab="积分">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8.2l1.3 2.6 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4z"/></svg>
       积分
-    </button>
-    <button class="tab" data-tab="投票">
-      <svg viewBox="0 0 24 24"><path d="M6 4.5h12v15H6z"/><path d="M9.2 9.4l1.8 1.8 3.6-3.6"/><path d="M9.2 15h5.6"/></svg>
-      投票
     </button>
     <button class="tab" data-tab="我的">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="8.4" r="3.6"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>
@@ -626,10 +623,6 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
         if(window.C74Polls) window.C74Polls.close();
         if(window.C74Points) window.C74Points.open();
         else toast('积分页还没准备好');
-      } else if(name === '投票'){
-        if(window.C74Points) window.C74Points.close();
-        if(window.C74Polls) window.C74Polls.open();
-        else toast('投票页还没准备好');
       } else {
         if(window.C74Points) window.C74Points.close();
         if(window.C74Polls) window.C74Polls.close();
@@ -811,7 +804,7 @@ button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:poin
 <script src="upload.js?v=16"></script>
 <script src="report.js?v=9"></script>
 <script src="points.js?v=2"></script>
-<script src="polls.js?v=1"></script>
-<script src="tools.js?v=6"></script>
+<script src="polls.js?v=2"></script>
+<script src="tools.js?v=7"></script>
 </body>
 </html>

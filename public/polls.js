@@ -260,6 +260,11 @@
     }
   });
 
+  var backBtn = document.getElementById('plBack');
+  if (backBtn) backBtn.addEventListener('click', function () {
+    if (window.C74Polls) C74Polls.close();
+  });
+
   /* ---------- 对外 ---------- */
   window.C74Polls = {
     open: function () {
