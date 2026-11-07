@@ -48,6 +48,15 @@
       ph: '要申请什么、为什么、大概什么时候',
       min: 2, canAnon: false, anonDefault: false, btn: '提 交 申 请', done: '申请已提交'
     },
+    appeal: {
+      title: '意见申诉', sub: 'APPEAL',
+      intro: '对处理结果有想法，或者觉得哪件事不太公平，都可以写在这里。',
+      types: [['punish', '对处罚有异议'], ['result', '对结果不满'], ['advice', '意见反馈'], ['other', '其他']],
+      target: '关于什么事 · 可选',
+      targetPh: '比如：上周的扣分、被禁言',
+      ph: '说说你的情况和想法（至少 4 个字）',
+      min: 4, canAnon: true, anonDefault: true, btn: '提 交 申 诉', done: '已提交'
+    },
     note: {
       title: '报备', sub: 'NOTICE',
       intro: '迟到、请假、身体不舒服，先留一句，省得大家找你。',
@@ -319,6 +328,7 @@
     openReview: openReview,
     openForm: function () { open('report'); },
     openApply: function () { open('apply'); },
+    openAppeal: function () { open('appeal'); },
     openNote: function () { open('note'); },
     checkInbox: checkInbox
   };

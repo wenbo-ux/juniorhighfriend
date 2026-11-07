@@ -765,7 +765,7 @@ async function dropCode(req, env, cors, code) {
    任何登录同学都能提交，可以匿名。
    提交后先进入待处理队列，由有审核权限的账号看过之后才会转给老师；
    界面上不写这些，只是流程上确实过一遍。                               */
-const TICKET_LABEL = { report: '举报', apply: '申请', note: '报备' };
+const TICKET_LABEL = { report: '举报', apply: '申请', note: '报备', appeal: '意见申诉' };
 
 async function notifyAccount(env) {
   let name = '郭老师';
@@ -798,8 +798,8 @@ async function createTicket(req, env, cors) {
   images = images.filter(s => typeof s === 'string' && s.startsWith('data:image/'));
   if (images.join('').length > 900000) return json({ error: '图片太大，换小一点或只放一张' }, 413, cors);
 
-  /* 只有举报能匿名；申请、报备一律实名 */
-  const anonymous = (kind === 'report' && b.anonymous) ? 1 : 0;
+  /* 举报和意见申诉可以匿名；申请、报备一律实名 */
+  const anonymous = ((kind === 'report' || kind === 'appeal') && b.anonymous) ? 1 : 0;
   const id = uid('t_');
   await env.DB.prepare(
     `INSERT INTO tickets (id,kind,type,target,text,images,anonymous,from_id,from_name,status,created_at,approvals,required)
@@ -848,7 +848,7 @@ async function listTickets(req, env, cors) {
     from_name: r.anonymous ? '匿名' : (r.from_name || '同学')
   }));
   const pend = list.filter(t => t.status === 'pending');
-  const counts = { all: pend.length, report: 0, apply: 0, note: 0 };
+  const counts = { all: pend.length, report: 0, apply: 0, note: 0, appeal: 0 };
   pend.forEach(t => { if (counts[t.kind] != null) counts[t.kind]++; });
   return json({
     ok: true,

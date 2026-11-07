@@ -730,7 +730,7 @@
           return;
         }
         r.status = 'ok';
-        publishNotice({ text: r.text, author: r.by, urgent: r.type === '寻人启事', images: r.images || [] });
+        publishNotice({ text: r.text, author: r.by, urgent: r.type === '寻物启事', images: r.images || [] });
         save(); log('通过申请并发布：' + r.by + ' · ' + r.text.slice(0, 12));
         renderNotices(); toast('已通过并发布'); openReviews();
       });
@@ -813,7 +813,7 @@
       '<div class="m-pills" id="mrType">' +
       '<button class="m-pill" data-t="公告" aria-pressed="true">发公告</button>' +
       '<button class="m-pill" data-t="置顶消息" aria-pressed="false">置顶消息</button>' +
-      '<button class="m-pill" data-t="寻人启事" aria-pressed="false">寻人启事</button></div></div>' +
+      '<button class="m-pill" data-t="寻物启事" aria-pressed="false">寻物启事</button></div></div>' +
       '<div class="m-field"><label>内容 <span>REQUEST</span></label>' +
       '<textarea id="mrText" maxlength="160" placeholder="写清楚要发什么、为什么置顶……"></textarea></div>' +
       '<div class="m-field" id="mrPhoto" hidden><label>照片 <span>PHOTO · 最多 3 张</span></label>' +
@@ -844,7 +844,7 @@
         mBody.querySelectorAll('#mrType .m-pill').forEach(function (o) { o.setAttribute('aria-pressed', 'false'); });
         p.setAttribute('aria-pressed', 'true');
         type = p.getAttribute('data-t');
-        if (photoField) photoField.hidden = (type !== '寻人启事');
+        if (photoField) photoField.hidden = (type !== '寻物启事');
       });
     });
 
@@ -857,7 +857,7 @@
     $('#mrSend').addEventListener('click', function () {
       var text = ($('#mrText').value || '').trim();
       if (text.length < 2) { toast('至少写两个字'); return; }
-      var imgs = type === '寻人启事' ? reqImgs.slice() : [];
+      var imgs = type === '寻物启事' ? reqImgs.slice() : [];
       var by = session.name || session.id || '同学';
       var auto = can('junior');
 
@@ -867,7 +867,7 @@
       });
 
       if (auto) {
-        publishNotice({ text: text, author: by, urgent: type === '寻人启事', images: imgs });
+        publishNotice({ text: text, author: by, urgent: type === '寻物启事', images: imgs });
         save();
         log('发布' + type + '：' + text.slice(0, 12));
         renderNotices();
@@ -1036,7 +1036,8 @@
               '<button class="ac-q" data-rq="report"><span>举报</span><b id="rqReport">—</b></button>' +
               '<button class="ac-q" data-rq="apply"><span>申请</span><b id="rqApply">—</b></button>' +
               '<button class="ac-q" data-rq="note"><span>报备</span><b id="rqNote">—</b></button>' +
-              '<button class="ac-q" data-rq="all"><span>全部</span><b id="rqAll">—</b></button>' +
+              '<button class="ac-q" data-rq="appeal"><span>申诉</span><b id="rqAppeal">—</b></button>' +
+              '<button class="ac-q wide" data-rq="all"><span>全部</span><b id="rqAll">—</b></button>' +
             '</div></div>' +
           '<div class="m-sec"><div class="m-sec-h">管理员</div><div class="m-act-row">' +
           '<button class="m-btn" id="acCodes">注册码管理</button></div></div>'
@@ -1098,6 +1099,7 @@
         set('rqReport', c.report || 0);
         set('rqApply', c.apply || 0);
         set('rqNote', c.note || 0);
+        set('rqAppeal', c.appeal || 0);
         set('rqAll', c.all || 0);
       }).catch(function () {});
     }
@@ -1336,7 +1338,7 @@
     var b = document.createElement('button');
     b.className = 'req-link';
     b.id = 'reqBtn';
-    b.innerHTML = '<b>申请</b> 置顶 / 公告 / 寻人启事';
+    b.innerHTML = '<b>申请</b> 置顶 / 公告 / 寻物启事';
     b.addEventListener('click', openRequest);
     sub.parentNode.appendChild(b);
   }

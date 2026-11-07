@@ -191,3 +191,4 @@
 .ac-q:active{transform:scale(.975)}
 .ac-q b{font:11px/1 ui-monospace,Menlo,monospace;color:#5f7397;min-width:14px;text-align:right}
 .ac-q b.hot{color:#5fe3ff}
+.ac-q.wide{grid-column:span 2}
